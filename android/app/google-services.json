@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "819699009606",
+    "project_id": "sigopal",
+    "storage_bucket": "sigopal.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:819699009606:android:ef15c6bc88155657e2a247",
+        "android_client_info": {
+          "package_name": "com.example.sigopal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCFQMXtNw7p8C8CfHyobm2f_O8pRxpDzTo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
