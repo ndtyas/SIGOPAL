@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:sigopal/provider/auth_provider.dart';
-import 'package:sigopal/widget/imgpick/imgpick_widget.dart';
-import 'package:sigopal/widget/textfield/textfield_email_widget.dart';
-import 'package:sigopal/widget/textfield/textfield_pass_widget.dart';
 import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart';
+import 'package:sigopal/widget/textfield/textfield_pass_widget.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,125 +11,260 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  TextEditingController email = TextEditingController();
-  TextEditingController password = TextEditingController();
+  final emailController = TextEditingController();
+  final passwordController = TextEditingController();
+  final usernameController = TextEditingController();
+
   @override
   Widget build(BuildContext context) {
-    var loadAuth = Provider.of<AuthProvider>(context);
-    return Container(
-      color: const Color.fromARGB(255, 29, 29, 29),
-      child: SafeArea(
-        child: Scaffold(
-          resizeToAvoidBottomInset: false,
-          body: Stack(
-            children: [
-              Container(
-                height: MediaQuery.of(context).size.height,
-                width: MediaQuery.of(context).size.width,
-                decoration: const BoxDecoration(
-                  image: DecorationImage(image: AssetImage("images/dark_pattern.jpg"),fit: BoxFit.cover)
-                ),
+    final auth = Provider.of<AuthProvider>(context);
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF62C3D0),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.3,
+              child: Image.asset(
+                'images/air.png',
+                fit: BoxFit.cover,
               ),
-              Container(
-                height: MediaQuery.of(context).size.height / 4 - 20,
-                decoration: const BoxDecoration(
-                  color: Color.fromARGB(255, 29, 29, 29),
-                  borderRadius: BorderRadius.only(bottomLeft: Radius.circular(50)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.green,
-                      spreadRadius: 1,
-                      blurRadius: 5,
-                      offset: Offset(0, 5)
-                    )
-                  ]
-                ),
-              ),
-              Column(
-                children: [
-                  const Spacer(),
-                  Container(
-                    height: MediaQuery.of(context).size.height / 4 - 20,
-                    decoration: const BoxDecoration(
-                      color: Color.fromARGB(255, 29, 29, 29),
-                      borderRadius: BorderRadius.only(topRight: Radius.circular(50)),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.green,
-                          spreadRadius: 1,
-                          blurRadius: 5,
-                          offset: Offset(0, -5)
-                        )
-                      ]
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                margin: const EdgeInsets.all(20),
+            ),
+          ),
+          SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      loadAuth.islogin?"Login" : "Register",
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: Theme.of(context)
-                              .textTheme
-                              .headlineLarge
-                              ?.fontSize),
-                    ),
-                    const SizedBox(height: 20,),
+                    if (auth.islogin)
+                      Column(
+                        children: [
+                          Image.asset(
+                            'images/logoPutih.png',
+                            width: 150,
+                            height: 150,
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    if (auth.showTopError)
+                      Container(
+                        width: MediaQuery.of(context).size.width * 0.7,
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        margin: const EdgeInsets.only(bottom: 15),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          auth.topErrorMessage,
+                          style: const TextStyle(color: Colors.red),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
                     Container(
-                      padding: const EdgeInsets.all(20),
-                 
+                      padding: const EdgeInsets.all(35),
+                      width: MediaQuery.of(context).size.width * 0.8,
                       decoration: BoxDecoration(
-                          color: Theme.of(context).canvasColor,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: const [
-                            BoxShadow(
-                                color: Colors.green,
-                                spreadRadius: 1,
-                                blurRadius: 2,
-                                offset: Offset(0, 3))
-                          ]),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color.fromARGB(255, 98, 195, 208),
+                            spreadRadius: 1,
+                            blurRadius: 2,
+                            offset: Offset(0, 3),
+                          )
+                        ],
+                      ),
                       child: Form(
-                        key: loadAuth.form,
+                        key: auth.form,
                         child: Column(
                           children: [
-                            if(!loadAuth.islogin)ImagePickWidget(),
-                            TextfieldEmailWidget(controller: email),
-                            const SizedBox(
-                              height: 15,
+                            if (!auth.islogin)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    "Username",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 15),
+                                  TextFormField(
+                                    controller: usernameController,
+                                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                                    validator: (value) {
+                                      if (value == null || value.trim().isEmpty) {
+                                        return 'Username tidak boleh kosong';
+                                      }
+                                      return null;
+                                    },
+                                    onSaved: (value) {
+                                      auth.enteredUsername = value!.trim();
+                                    },
+                                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                    decoration: InputDecoration(
+                                      hintText: "Masukkan Nama....",
+                                      hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(color: Colors.grey),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        borderSide: const BorderSide(color: Colors.green),
+                                      ),
+                                      suffixIcon: const Icon(Icons.person, color: Color(0xFF62C3D0)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 15),
+                                ],
+                              ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Email",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextFormField(
+                                  controller: emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  autovalidateMode: AutovalidateMode.onUserInteraction,
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Email tidak boleh kosong';
+                                    }
+                                    if (!value.contains('@')) {
+                                      return 'Format email tidak valid';
+                                    }
+                                    return null;
+                                  },
+                                  style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                  decoration: InputDecoration(
+                                    hintText: "Masukkan Email...",
+                                    hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                      borderSide: const BorderSide(color: Colors.grey),
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(15),
+                                      borderSide: const BorderSide(color: Colors.green),
+                                    ),
+                                    suffixIcon: const Icon(Icons.email, color: Color(0xFF62C3D0)),
+                                  ),
+                                ),
+                                const SizedBox(height: 15),
+                              ],
                             ),
-                            TextfieldPasswordWidget(controller: password),
-                            const SizedBox(
-                              height: 30,
+                            TextfieldPasswordWidget(
+                              controller: passwordController,
+                              textColor: Colors.grey,
+                              iconColor: const Color(0xFF62C3D0),
                             ),
+                            const SizedBox(height: 30),
                             SizedBox(
-                              width: MediaQuery.of(context).size.width,
-                              child: ElevatedButton(onPressed: (){
-                                loadAuth.submit();
-                              }, child: Text(loadAuth.islogin ? "Login" : "Register")),
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  FocusScope.of(context).unfocus();
+                                  auth.enteredEmail = emailController.text.trim();
+                                  auth.enteredPassword = passwordController.text.trim();
+                                  if (!auth.islogin) {
+                                    auth.enteredUsername = usernameController.text.trim();
+                                  }
+
+                                  if (auth.islogin) {
+                                    auth.submit(
+                                      onSuccess: () {
+                                        if (!context.mounted) return;
+                                        Navigator.pushReplacementNamed(context, '/home');
+                                      },
+                                      onError: (msg) {
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(msg)),
+                                        );
+                                      },
+                                    );
+                                  } else {
+                                    auth.register(
+                                      onError: (msg) {
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(msg)),
+                                        );
+                                      },
+                                    );
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF62C3D0),
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: Text(auth.islogin ? 'Masuk' : 'Daftar'),
+                              ),
                             ),
-                            const SizedBox(height: 20,),
+                            const SizedBox(height: 5),
+                            TextButton(
+                              onPressed: () {
+                                setState(() {
+                                  auth.islogin = !auth.islogin;
+                                  auth.clearTopError();
+                                });
+                              },
+                              child: Text(
+                                auth.islogin ? 'Buat Akun' : 'Sudah Punya Akun',
+                                style: const TextStyle(color: Colors.black),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            if (!auth.islogin)
+                              TextButton(
+                                onPressed: () async {
+                                  auth.enteredEmail = emailController.text.trim();
+                                  auth.enteredPassword = passwordController.text.trim();
 
-                            TextButton(onPressed: (){
-                              setState(() {
-                                loadAuth.islogin = !loadAuth.islogin;
-                              });
-                            }, child: Text(loadAuth.islogin ? "Create account" : "I already have account"))
-
+                                  await auth.resendVerification(
+                                    onFeedback: (msg) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(msg)),
+                                      );
+                                    },
+                                  );
+                                },
+                                child: const Text(
+                                  'Kirim Ulang Email Verifikasi',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
                     ),
                   ],
                 ),
-              )
-            ],
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

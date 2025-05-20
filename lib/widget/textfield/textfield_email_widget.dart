@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:sigopal/provider/auth_provider.dart';
 import 'package:provider/provider.dart';
 
-
 class TextfieldEmailWidget extends StatefulWidget {
-  const TextfieldEmailWidget({super.key, required this.controller});
+  const TextfieldEmailWidget({
+    super.key,
+    required this.controller,
+    this.textColor = Colors.black, // tambahkan textColor opsional
+  });
+
   final TextEditingController controller;
+  final Color textColor;
 
   @override
   State<TextfieldEmailWidget> createState() => _TextfieldEmailWidgetState();
@@ -18,16 +23,26 @@ class _TextfieldEmailWidgetState extends State<TextfieldEmailWidget> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Email",style: TextStyle(fontWeight: FontWeight.bold,fontSize: 20),),
-        const SizedBox(height: 20,),
+        Text(
+          "Email",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: widget.textColor, // <-- warna label
+          ),
+        ),
+        const SizedBox(height: 15),
         TextFormField(
           controller: widget.controller,
-          autovalidateMode:  AutovalidateMode.onUserInteraction,
+          style: TextStyle(color: widget.textColor,
+          fontSize: 14,
+          ), // <-- warna teks input
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: (value) {
-            if(value!.isEmpty || value == ""){
-              return "Email can't be empty";
-            }else if(!value.trim().contains("@")){
-              return "Email not valid";
+            if (value!.isEmpty) {
+              return "Email tidak boleh kosong";
+            } else if (!value.trim().contains("@")) {
+              return "Email tidak valid";
             }
             return null;
           },
@@ -35,12 +50,18 @@ class _TextfieldEmailWidgetState extends State<TextfieldEmailWidget> {
             loadAuth.enteredEmail = value!;
           },
           decoration: InputDecoration(
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(20),
+            hintText: "Masukkan Email....",
+            hintStyle: TextStyle(color: widget.textColor.withOpacity(0.6)), // <-- hint
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: BorderSide(color: widget.textColor),
             ),
-            hintText: "Insert Email...."
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(15),
+              borderSide: BorderSide(color: Colors.green),
+            ),
           ),
-        )
+        ),
       ],
     );
   }
