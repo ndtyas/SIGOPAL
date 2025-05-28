@@ -11,173 +11,238 @@ class MonitoringScreen extends StatelessWidget {
     }
   }
 
-  Widget buildMonitoringBox(String title, String value, String unit, IconData? icon) {
-    const Color boxContentColor = Color(0xFF17778F);
-
+  Widget dataBox(String imagePath, String value, String title) {
     return Container(
-      width: 100,
-      height: 120,
-      margin: const EdgeInsets.symmetric(horizontal: 8),
+      // Further reduced vertical padding slightly
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // Reduced from 12 to 10
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        // Replaced .withOpacity(0.9) with 0xE6 (90% opacity)
+        color: const Color(0xE617778F), // E6 is approx 90% of FF (255)
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black12,
-            blurRadius: 4,
-            offset: Offset(2, 2),
-          ),
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: const Offset(0, 6),
+          )
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          if (icon != null) Icon(icon, color: boxContentColor),
-          const SizedBox(height: 6),
+          Image.asset(
+            imagePath,
+            width: 50,
+            height: 50,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(height: 6), 
           Text(
             value,
             style: const TextStyle(
-              fontSize: 20,
+              fontSize: 28,
               fontWeight: FontWeight.bold,
-              color: boxContentColor,
+              color: Colors.white,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 12,
-              color: boxContentColor,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
             ),
           ),
-          if (unit.isNotEmpty)
-            Text(
-              unit,
-              style: const TextStyle(
-                fontSize: 12,
-                color: boxContentColor,
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget buildHorizontalSection(String sectionTitle, List<Widget> boxes) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          sectionTitle,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 140,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: boxes,
+  Widget sniBox() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        // Replaced .withOpacity(0.9) with 0xE6 (90% opacity)
+        color: const Color(0xE617778F), // E6 is approx 90% of FF (255)
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Image.asset(
+            'images/sni.png',
+            width: 60,
+            height: 60,
+            fit: BoxFit.contain,
           ),
-        ),
-      ],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Standar SNI",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: const [
+                    SizedBox(
+                        width: 40,
+                        child: Text("TDS",
+                            style: TextStyle(fontSize: 17, color: Colors.white))),
+                    Text(": 1000",
+                        style: TextStyle(fontSize: 17, color: Colors.white)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: const [
+                    SizedBox(
+                        width: 40,
+                        child: Text("pH",
+                            style: TextStyle(fontSize: 17, color: Colors.white))),
+                    Text(": 6 - 9",
+                        style: TextStyle(fontSize: 17, color: Colors.white)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF62C3D0),
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.3,
-              child: Image.asset(
-                'images/air.png',
-                fit: BoxFit.cover,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF62C3D0),
+              Color(0xFF17778F),
+            ],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.2,
+                child: Image.asset(
+                  'images/air.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
-          ),
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Text(
-                      "Pemantauan",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF17778F),
-                      ),
+                    // --- Header ---
+                    Row(
+                      children: [
+                        const Text(
+                          "Pemantauan",
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.logout, color: Colors.white, size: 28),
+                          onPressed: () => _logout(context),
+                        ),
+                      ],
                     ),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.logout, color: Color(0xFF17778F)),
-                      onPressed: () => _logout(context),
+                    const SizedBox(height: 30),
+
+                    // --- Data Monitoring Grid ---
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.0, // Should be fine, but can adjust if needed
+                      children: [
+                        dataBox("images/tds.png", "150", "Kadar TDS"),
+                        dataBox("images/ph.png", "7", "Kadar pH"),
+                      ],
                     ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Card(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  color: const Color(0xFF17778F),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 60,
-                            height: 60,
-                            child: ClipRect(
-                              child: Image.asset(
-                                'images/logoPutih.png',
-                                fit: BoxFit.contain,
+                    const SizedBox(height: 15),
+
+                    // --- SNI Box ---
+                    sniBox(),
+
+                    const SizedBox(height: 15),
+
+                    // --- Circular "Cek Volume Air" Button ---
+                    Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.pushNamed(context, '/volume');
+                        },
+                        child: Container(
+                          width: 200,
+                          height: 200,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            // Replaced .withOpacity(0.9) with 0xE6 (90% opacity)
+                            color: const Color(0xE617778F), // E6 is approx 90% of FF (255)
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.3),
+                                blurRadius: 15,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Text(
+                              "Cek\nVolume Air",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            "Solusi Digital Pengelolaan Air PAMSIMAS Rumah Anda",
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 15),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                buildHorizontalSection("Hasil Monitoring", [
-                  buildMonitoringBox("Kadar PH", "7", "", Icons.water),
-                  buildMonitoringBox("Kadar TDS", "150", "ppm", Icons.science),
-                  buildMonitoringBox("Kadar DO", "7", "", Icons.bubble_chart),
-                  buildMonitoringBox("Turbidity", "31", "NTU", Icons.opacity),
-                  buildMonitoringBox("Suhu", "2.8", "°C", Icons.thermostat),
-                  buildMonitoringBox("Water Level", "75%", "", Icons.water_drop),
-                ]),
-                const SizedBox(height: 16),
-                buildHorizontalSection("Nilai Batas SNI", [
-                  buildMonitoringBox("Kadar PH", "6.5 - 8.5", "", Icons.water),
-                  buildMonitoringBox("Kadar TDS", "\u2264 500", "ppm", Icons.science),
-                  buildMonitoringBox("Kadar DO", "\u2265 6", "", Icons.bubble_chart),
-                  buildMonitoringBox("Turbidity", "< 25", "NTU", Icons.opacity),
-                  buildMonitoringBox("Suhu", "26 - 30", "°C", Icons.thermostat),
-                  buildMonitoringBox("Water Level", "100%", "", Icons.water_drop),
-                ]),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

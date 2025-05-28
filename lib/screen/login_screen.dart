@@ -39,6 +39,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
+                    // Tombol kembali
+                    Align(
+                      alignment: Alignment.topLeft,
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () {
+                          Navigator.pushReplacementNamed(context, '/welcome');
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
                     if (auth.islogin)
                       Column(
                         children: [
@@ -191,7 +203,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     auth.submit(
                                       onSuccess: () {
                                         if (!context.mounted) return;
-                                        Navigator.pushReplacementNamed(context, '/home');
+                                        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
                                       },
                                       onError: (msg) {
                                         if (!context.mounted) return;

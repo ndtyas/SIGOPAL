@@ -27,29 +27,39 @@ class _ControllingScreenState extends State<ControllingScreen> {
   Widget buildInfoCard(IconData icon, String value, String label) {
     return Expanded(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.symmetric(vertical: 16),
+        margin: const EdgeInsets.symmetric(horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          color: const Color(0xF2FFFFFF), // 95% opacity white (F2 is already an alpha value)
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(
+              // Replaced .withOpacity(0.15) with 0x26 (approx 15% opacity)
+              color: const Color(0x26000000), // 0x26 is approx 15% of FF (255)
+              blurRadius: 10,
+              spreadRadius: 2,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, size: 24, color: Color(0xFF17778F)),
-            const SizedBox(height: 8),
+            Icon(icon, size: 30, color: const Color(0xFF17778F)),
+            const SizedBox(height: 10),
             Text(
               value,
               style: const TextStyle(
-                fontSize: 24,
+                fontSize: 26,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF17778F),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               label,
+              textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 16,
                 color: Color(0xFF17778F),
               ),
             ),
@@ -62,117 +72,131 @@ class _ControllingScreenState extends State<ControllingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF62C3D0),
-      body: Stack(
-        children: [
-          // 🔵 Background image
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.3,
-              child: Image.asset(
-                'images/air.png',
-                fit: BoxFit.cover,
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF62C3D0),
+              Color(0xFF17778F),
+            ],
+          ),
+        ),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.2,
+                child: Image.asset(
+                  'images/air.png',
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
-          ),
-
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // 🔵 Header
-                  Row(
-                    children: [
-                      const Text(
-                        "Pengontrolan",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF17778F),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.logout, color: Color(0xFF17778F)),
-                        onPressed: () => _logout(context),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 45),
-
-                  // 🔵 Tiga indikator atas
-                  Row(
-                    children: [
-                      buildInfoCard(Icons.water_drop, "9", "Debit Air"),
-                      buildInfoCard(Icons.flash_on, "9", "Tegangan"),
-                      buildInfoCard(Icons.swap_vert, "9", "Arus"),
-                    ],
-                  ),
-
-                  const SizedBox(height: 30),
-
-                  // 🔵 Kotak putih isi teks dan tombol
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+            SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  children: [
+                    Row(
                       children: [
                         const Text(
-                          "Pencet Tombol Untuk\nBuka Tutup Kran",
-                          textAlign: TextAlign.center,
+                          "Pengontrolan",
                           style: TextStyle(
-                            fontSize: 22,
-                            color: Color(0xFF17778F),
+                            fontSize: 24,
                             fontWeight: FontWeight.bold,
+                            color: Colors.white,
                           ),
                         ),
-                        const SizedBox(height: 25),
-                        GestureDetector(
-                          onTap: toggleValve,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            width: 150,
-                            height: 150,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: valveOpen ? Colors.red : const Color(0xFF17778F),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.logout, color: Colors.white, size: 28),
+                          onPressed: () => _logout(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 40),
+
+                    // Row dibungkus dengan Expanded agar tidak overflow
+                    Row(
+                      children: [
+                        buildInfoCard(Icons.water_drop, "9", "Debit Air"),
+                        buildInfoCard(Icons.flash_on, "9", "Tegangan"),
+                        buildInfoCard(Icons.swap_vert, "9", "Arus"),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xF2FFFFFF), // 95% white (F2 is already an alpha value)
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            // Replaced .withOpacity(0.2) with 0x33 (approx 20% opacity)
+                            color: const Color(0x33000000), // 0x33 is approx 20% of FF (255)
+                            blurRadius: 12,
+                            spreadRadius: 3,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            "Ketuk Tombol Untuk\nBuka Tutup Kran",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 22,
+                              color: Color(0xFF17778F),
+                              fontWeight: FontWeight.bold,
                             ),
-                            child: Center(
-                              child: Text(
-                                valveOpen ? "OFF" : "ON",
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.bold,
+                          ),
+                          const SizedBox(height: 25),
+                          GestureDetector(
+                            onTap: toggleValve,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              width: 150,
+                              height: 150,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: valveOpen ? Colors.red : const Color(0xFF17778F),
+                                boxShadow: [
+                                  BoxShadow(
+                                    // Replaced .withOpacity(0.3) with 0x4C (approx 30% opacity)
+                                    color: const Color(0x4C000000), // 0x4C is approx 30% of FF (255)
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  valveOpen ? "OFF" : "ON",
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-
-                  const Spacer(),
-                ],
+                    const SizedBox(height: 20), // Bottom spacing
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

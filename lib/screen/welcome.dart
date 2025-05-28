@@ -7,29 +7,92 @@ class WelcomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF62C3D0),
-      body: GestureDetector(
-        onTap: () {
-          // Navigasi ke halaman login atau auth wrapper
-          Navigator.pushReplacementNamed(context, '/checkauth');
-        },
-        child: SafeArea(
-          child: Center(
-            child: SingleChildScrollView( // Menghindari overflow
+      body: Stack(
+        children: [
+          // Gambar latar belakang dengan opacity
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0.3,
+              child: Image.asset(
+                'images/air.png',
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+
+          // Konten utama
+          SafeArea(
+            child: Center(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
+                  const SizedBox(height: 0),
                   Image.asset(
-                    'images/logo.png',
-                    width: MediaQuery.of(context).size.width * 0.99, // Responsif
-                    height: MediaQuery.of(context).size.height * 0.77, // Responsif
-                    fit: BoxFit.contain,
+                    'images/logoText.png',
+                    width: 250,
+                    height: 250,
                   ),
+
+                  const SizedBox(height: 35),
+
+                  // Tombol "Tentang Kami"
+                  SizedBox(
+                    width: 200,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/about');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF17778F),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      child: const Text(
+                        'Tentang Kami',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 20),
+
+                  // Tombol "Masuk"
+                  SizedBox(
+                    width: 200,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pushNamed(context, '/checkauth');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF17778F),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      child: const Text(
+                        'Masuk',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
