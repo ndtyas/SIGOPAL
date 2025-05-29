@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
-import 'package:sigopal/widget/textfield/textfield_pass_widget.dart';
+import 'package:sigopal/widget/textfield/textfield_pass_widget.dart'; // Assuming this widget exists
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,8 +16,39 @@ class _LoginScreenState extends State<LoginScreen> {
   final usernameController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Use addPostFrameCallback to ensure context is available after build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      // Pre-fill controllers if rememberMe is true and credentials are loaded
+      if (auth.rememberMe) {
+        emailController.text = auth.enteredEmail;
+        passwordController.text = auth.enteredPassword;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    usernameController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Listen to AuthProvider changes to update UI
     final auth = Provider.of<AuthProvider>(context);
+
+    // Ensure controllers are updated when AuthProvider state changes (e.g., after loading)
+    // This is important to reflect the pre-filled values
+    if (auth.rememberMe && emailController.text.isEmpty && passwordController.text.isEmpty) {
+        emailController.text = auth.enteredEmail;
+        passwordController.text = auth.enteredPassword;
+    }
+
 
     return Scaffold(
       backgroundColor: const Color(0xFF62C3D0),
@@ -45,6 +76,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () {
+                          // Optional: Clear credentials if the user goes back from login
+                          // auth.clearSavedCredentials();
                           Navigator.pushReplacementNamed(context, '/welcome');
                         },
                       ),
@@ -164,6 +197,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     }
                                     return null;
                                   },
+                                  onSaved: (value) {
+                                    auth.enteredEmail = value!.trim();
+                                  },
                                   style: const TextStyle(color: Colors.grey, fontSize: 14),
                                   decoration: InputDecoration(
                                     hintText: "Masukkan Email...",
@@ -187,12 +223,34 @@ class _LoginScreenState extends State<LoginScreen> {
                               textColor: Colors.grey,
                               iconColor: const Color(0xFF62C3D0),
                             ),
-                            const SizedBox(height: 30),
+                            const SizedBox(height: 10), // Adjusted space
+                            // New: "Remember Me" Checkbox
+                            if (auth.islogin) // Only show this for login mode
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  children: [
+                                    Checkbox(
+                                      value: auth.rememberMe,
+                                      onChanged: (newValue) {
+                                        auth.setRememberMe(newValue ?? false);
+                                      },
+                                      activeColor: const Color(0xFF62C3D0),
+                                    ),
+                                    const Text(
+                                      'Ingat Saya',
+                                      style: TextStyle(color: Colors.black),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            const SizedBox(height: 20), // Adjusted space
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
                                   FocusScope.of(context).unfocus();
+                                  // Make sure the provider's variables are up-to-date with controllers
                                   auth.enteredEmail = emailController.text.trim();
                                   auth.enteredPassword = passwordController.text.trim();
                                   if (!auth.islogin) {
@@ -236,6 +294,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 setState(() {
                                   auth.islogin = !auth.islogin;
                                   auth.clearTopError();
+                                  // Clear controllers when switching mode, to avoid carrying over values
+                                  emailController.clear();
+                                  passwordController.clear();
+                                  usernameController.clear();
+                                  // Also reset rememberMe when switching from login to register
+                                  if (!auth.islogin) {
+                                    auth.setRememberMe(false);
+                                  }
                                 });
                               },
                               child: Text(
@@ -247,6 +313,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             if (!auth.islogin)
                               TextButton(
                                 onPressed: () async {
+                                  // Ensure controller values are passed to provider before resending
                                   auth.enteredEmail = emailController.text.trim();
                                   auth.enteredPassword = passwordController.text.trim();
 

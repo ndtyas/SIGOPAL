@@ -15,6 +15,13 @@ class _ControllingScreenState extends State<ControllingScreen> {
     setState(() {
       valveOpen = !valveOpen;
     });
+    // In a real application, you would send this state change to your hardware (e.g., via Firebase, MQTT, etc.)
+    // For example:
+    // if (valveOpen) {
+    //   // Command to open valve
+    // } else {
+    //   // Command to close valve
+    // }
   }
 
   void _logout(BuildContext context) async {
@@ -24,18 +31,18 @@ class _ControllingScreenState extends State<ControllingScreen> {
     }
   }
 
+  // This widget uses Expanded to be responsive within a Row
   Widget buildInfoCard(IconData icon, String value, String label) {
-    return Expanded(
+    return Expanded( // Ensures this card takes up equal available horizontal space
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8),
+        margin: const EdgeInsets.symmetric(horizontal: 8), // Keeps spacing between cards
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0xF2FFFFFF), // 95% opacity white (F2 is already an alpha value)
+          color: const Color(0xF2FFFFFF), // 95% opacity white
           borderRadius: BorderRadius.circular(15),
           boxShadow: [
             BoxShadow(
-              // Replaced .withOpacity(0.15) with 0x26 (approx 15% opacity)
-              color: const Color(0x26000000), // 0x26 is approx 15% of FF (255)
+              color: const Color(0x26000000), // Approx 15% opacity black
               blurRadius: 10,
               spreadRadius: 2,
               offset: const Offset(0, 5),
@@ -44,12 +51,12 @@ class _ControllingScreenState extends State<ControllingScreen> {
         ),
         child: Column(
           children: [
-            Icon(icon, size: 30, color: const Color(0xFF17778F)),
+            Icon(icon, size: 30, color: const Color(0xFF17778F)), // Fixed icon size, generally fine
             const SizedBox(height: 10),
             Text(
               value,
               style: const TextStyle(
-                fontSize: 26,
+                fontSize: 26, // Fixed font size, scales well by default Flutter
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF17778F),
               ),
@@ -59,7 +66,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 16,
+                fontSize: 16, // Fixed font size
                 color: Color(0xFF17778F),
               ),
             ),
@@ -90,12 +97,12 @@ class _ControllingScreenState extends State<ControllingScreen> {
                 opacity: 0.2,
                 child: Image.asset(
                   'images/air.png',
-                  fit: BoxFit.cover,
+                  fit: BoxFit.cover, // Image covers the entire background
                 ),
               ),
             ),
-            SafeArea(
-              child: SingleChildScrollView(
+            SafeArea( // Ensures content is visible and not under system UI
+              child: SingleChildScrollView( // Allows content to scroll on smaller screens
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
@@ -109,7 +116,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                             color: Colors.white,
                           ),
                         ),
-                        const Spacer(),
+                        const Spacer(), // Pushes logout button to the right
                         IconButton(
                           icon: const Icon(Icons.logout, color: Colors.white, size: 28),
                           onPressed: () => _logout(context),
@@ -118,7 +125,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                     ),
                     const SizedBox(height: 40),
 
-                    // Row dibungkus dengan Expanded agar tidak overflow
+                    // Row wrapped with Expanded cards makes them responsive
                     Row(
                       children: [
                         buildInfoCard(Icons.water_drop, "9", "Debit Air"),
@@ -129,15 +136,14 @@ class _ControllingScreenState extends State<ControllingScreen> {
                     const SizedBox(height: 30),
 
                     Container(
-                      width: double.infinity,
+                      width: double.infinity, // Takes full available width
                       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
                       decoration: BoxDecoration(
-                        color: const Color(0xF2FFFFFF), // 95% white (F2 is already an alpha value)
+                        color: const Color(0xF2FFFFFF), // 95% white
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            // Replaced .withOpacity(0.2) with 0x33 (approx 20% opacity)
-                            color: const Color(0x33000000), // 0x33 is approx 20% of FF (255)
+                            color: const Color(0x33000000), // Approx 20% opacity black
                             blurRadius: 12,
                             spreadRadius: 3,
                             offset: const Offset(0, 6),
@@ -145,7 +151,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                         ],
                       ),
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisSize: MainAxisSize.min, // Column only takes space needed by children
                         children: [
                           const Text(
                             "Ketuk Tombol Untuk\nBuka Tutup Kran",
@@ -161,15 +167,14 @@ class _ControllingScreenState extends State<ControllingScreen> {
                             onTap: toggleValve,
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 300),
-                              width: 150,
+                              width: 150, // Fixed size for the button, consider dynamic if needed for very small screens
                               height: 150,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: valveOpen ? Colors.red : const Color(0xFF17778F),
                                 boxShadow: [
                                   BoxShadow(
-                                    // Replaced .withOpacity(0.3) with 0x4C (approx 30% opacity)
-                                    color: const Color(0x4C000000), // 0x4C is approx 30% of FF (255)
+                                    color: const Color(0x4C000000), // Approx 30% opacity black
                                     blurRadius: 10,
                                     offset: const Offset(0, 6),
                                   ),
