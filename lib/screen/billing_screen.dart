@@ -4,6 +4,35 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
+// You would define your API service here, e.g.:
+// class ApiService {
+//   final String _baseUrl = "YOUR_GATEWAY_API_BASE_URL";
+
+//   Future<Map<String, dynamic>> fetchMeterData(
+//       String userId, DateTime startDate, DateTime endDate) async {
+//     // This is a placeholder. Replace with your actual API endpoint and logic.
+//     final response = await http.get(Uri.parse(
+//         '$_baseUrl/meter_readings?userId=$userId&startDate=${startDate.toIso8601String()}&endDate=${endDate.toIso8601String()}'));
+
+//     if (response.statusCode == 200) {
+//       return json.decode(response.body);
+//     } else {
+//       throw Exception('Failed to load meter data from gateway');
+//     }
+//   }
+
+//   // You might also fetch hargaPerCBM from API if it's dynamic
+//   // Future<double> fetchHargaPerCBM() async {
+//   //   final response = await http.get(Uri.parse('$_baseUrl/price_config'));
+//   //   if (response.statusCode == 200) {
+//   //     final data = json.decode(response.body);
+//   //     return (data['hargaPerCBM'] as num).toDouble();
+//   //   } else {
+//   //     throw Exception('Failed to load price config');
+//   //   }
+//   // }
+// }
+
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
 
@@ -18,17 +47,30 @@ class _BillingScreenState extends State<BillingScreen> {
   int meterAwal = 0;
   int meterAkhir = 0;
   double hargaPerCBM = 0.0;
+  String nodeName = "Memuat..."; // New state for node name
 
   String userName = "";
   bool _isLoading = true;
 
   List<Map<String, dynamic>> _billingHistory = [];
 
+  // final ApiService _apiService = ApiService(); // Initialize your API service
+
   @override
   void initState() {
     super.initState();
     _loadUserDataAndBilling();
     _loadBillingHistory();
+  }
+
+  // Helper to format currency without .00 if it's a whole number
+  String _formatCurrency(double amount) {
+    final formatter = NumberFormat('#,##0', 'id_ID');
+    if (amount == amount.toInt()) {
+      return formatter.format(amount.toInt());
+    } else {
+      return NumberFormat('#,##0.00', 'id_ID').format(amount);
+    }
   }
 
   void _loadUserDataAndBilling() async {
@@ -45,25 +87,41 @@ class _BillingScreenState extends State<BillingScreen> {
         if (mounted) {
           if (userDoc.exists) {
             userName = userDoc.data()?['username'] ?? user.displayName ?? user.email ?? "Pengguna";
+            // Assuming nodeName might be part of user data in Firestore or fetched from API
+            nodeName = userDoc.data()?['nodeName'] ?? "Node A-123";
           } else {
             userName = user.displayName ?? user.email ?? "Pengguna";
+            nodeName = "Node A-123"; // Default if no user doc
           }
         }
       } catch (e) {
         if (mounted) {
           userName = user.displayName ?? user.email ?? "Pengguna";
+          nodeName = "Node A-123"; // Fallback
           if (kDebugMode) {
             print("Error fetching user data from Firestore: $e");
           }
         }
       }
 
+      // --- Integration point for API: Fetch initial meter and price data ---
       try {
+        // This is where you would call your API service
+        // Example:
+        // final meterData = await _apiService.fetchMeterData(user.uid, DateTime.now().subtract(const Duration(days: 30)), DateTime.now());
+        // setState(() {
+        //   meterAwal = meterData['startMeter'] ?? 0;
+        //   meterAkhir = meterData['endMeter'] ?? 0;
+        //   hargaPerCBM = (meterData['pricePerCBM'] as num?)?.toDouble() ?? 0.0;
+        //   nodeName = meterData['node'] ?? "N/A"; // Assuming node data is also in API response
+        // });
+
+        // For now, using existing Firestore logic for 'current_period' dummy data
         final billingDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(user.uid)
             .collection('billing_records')
-            .doc('current_period')
+            .doc('current_period') // This is largely for dummy data.
             .get();
 
         if (mounted) {
@@ -73,12 +131,16 @@ class _BillingScreenState extends State<BillingScreen> {
               meterAwal = data?['meterAwal'] ?? 0;
               meterAkhir = data?['meterAkhir'] ?? 0;
               hargaPerCBM = (data?['hargaPerCBM'] as num?)?.toDouble() ?? 0.0;
+              // If nodeName is not from userDoc, you could try to get it from billingDoc
+              nodeName = data?['nodeName'] ?? "Node A-123";
             });
           } else {
             setState(() {
+              // Dummy data for initial display if no 'current_period' document
               meterAwal = 5000;
               meterAkhir = 6200;
               hargaPerCBM = 2000.0;
+              nodeName = "Node A-123"; // Default dummy node
             });
             if (kDebugMode) {
               print("No billing data found for user ${user.uid}. Using dummy data.");
@@ -88,12 +150,14 @@ class _BillingScreenState extends State<BillingScreen> {
       } catch (e) {
         if (mounted) {
           setState(() {
+            // Fallback dummy data on error
             meterAwal = 5000;
             meterAkhir = 6200;
             hargaPerCBM = 2000.0;
+            nodeName = "Node A-123"; // Fallback dummy node
           });
           if (kDebugMode) {
-            print("Error fetching billing data from Firestore: $e");
+            print("Error fetching billing data (from Firestore or API): $e");
           }
         }
       }
@@ -101,9 +165,11 @@ class _BillingScreenState extends State<BillingScreen> {
       if (mounted) {
         userName = "Pengguna";
         setState(() {
+          // Dummy data for unauthenticated users
           meterAwal = 5000;
           meterAkhir = 6200;
           hargaPerCBM = 2000.0;
+          nodeName = "Node A-123"; // Default dummy node
         });
       }
     }
@@ -133,7 +199,7 @@ class _BillingScreenState extends State<BillingScreen> {
     final cost = usage * hargaPerCBM;
 
     try {
-      String docId = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      String docId = DateFormat('yyyyMMdd_HHmmss_SSS').format(DateTime.now());
 
       await FirebaseFirestore.instance
           .collection('users')
@@ -149,6 +215,8 @@ class _BillingScreenState extends State<BillingScreen> {
         'usage': usage,
         'totalCost': cost,
         'timestamp': FieldValue.serverTimestamp(),
+        'docId': docId,
+        'nodeName': nodeName, // Save node name with the billing record
       });
 
       if (mounted) {
@@ -160,7 +228,6 @@ class _BillingScreenState extends State<BillingScreen> {
         );
         _loadBillingHistory();
         setState(() {
-          // Setelah simpan, kembali ke halaman pemilihan tanggal
           startDate = null;
           endDate = null;
         });
@@ -271,6 +338,39 @@ class _BillingScreenState extends State<BillingScreen> {
             endDate = picked;
           }
         });
+        // --- Integration point for API: Fetch meter readings based on selected dates ---
+        // if (startDate != null && endDate != null) {
+        //   final user = FirebaseAuth.instance.currentUser;
+        //   if (user != null) {
+        //     try {
+        //       setState(() { _isLoading = true; });
+        //       final meterData = await _apiService.fetchMeterData(user.uid, startDate!, endDate!);
+        //       setState(() {
+        //         meterAwal = meterData['startMeter'] ?? 0;
+        //         meterAkhir = meterData['endMeter'] ?? 0;
+        //         // You might need to refetch hargaPerCBM if it's dynamic
+        //         // hargaPerCBM = (meterData['pricePerCBM'] as num?)?.toDouble() ?? 0.0;
+        //         nodeName = meterData['node'] ?? nodeName; // Update node name if provided by API
+        //       });
+        //     } catch (e) {
+        //       if (mounted) {
+        //         ScaffoldMessenger.of(context).showSnackBar(
+        //           SnackBar(content: Text("Gagal memuat data meter dari API: $e"), backgroundColor: Colors.red),
+        //         );
+        //       }
+        //       if (kDebugMode) {
+        //         print("Error fetching meter data from API: $e");
+        //       }
+        //       // Fallback or clear meter readings on API error
+        //       setState(() {
+        //         meterAwal = 0;
+        //         meterAkhir = 0;
+        //       });
+        //     } finally {
+        //       setState(() { _isLoading = false; });
+        //     }
+        //   }
+        // }
       }
     }
   }
@@ -313,6 +413,9 @@ class _BillingScreenState extends State<BillingScreen> {
       );
     }
 
+    final usage = (meterAkhir - meterAwal).toDouble();
+    final totalCost = usage * hargaPerCBM;
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -331,7 +434,7 @@ class _BillingScreenState extends State<BillingScreen> {
               child: Opacity(
                 opacity: 0.2,
                 child: Image.asset(
-                  'images/air.png',
+                  'images/air.png', // Ensure this image exists in your assets
                   fit: BoxFit.cover,
                 ),
               ),
@@ -424,7 +527,6 @@ class _BillingScreenState extends State<BillingScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 20),
-                                // Tombol untuk melihat riwayat billing
                                 ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor:
@@ -440,7 +542,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                     ),
                                   ),
                                   onPressed: () {
-                                    // Tampilkan dialog riwayat
+                                    // Show history dialog
                                     _showBillingHistoryDateList(context);
                                   },
                                   child: const Text("LIHAT RIWAYAT TAGIHAN"),
@@ -490,7 +592,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                       height: 30, thickness: 1.5, color: Color(0xFF17778F)),
 
                                   _buildDetailRow("Nama", userName),
-                                  _buildDetailRow("Node", "Node A-123"),
+                                  _buildDetailRow("Node", nodeName),
 
                                   const SizedBox(height: 10),
 
@@ -510,11 +612,11 @@ class _BillingScreenState extends State<BillingScreen> {
                                   ),
                                   _buildDetailRow(
                                     "Pemakaian",
-                                    "${(meterAkhir - meterAwal).toDouble().toStringAsFixed(2)} m\u00B3",
+                                    "${usage.toStringAsFixed(2)} m\u00B3",
                                   ),
                                   _buildDetailRow(
                                     "Harga per m\u00B3",
-                                    "Rp ${NumberFormat('#,##0.00', 'id_ID').format(hargaPerCBM)}",
+                                    "Rp ${_formatCurrency(hargaPerCBM)}",
                                   ),
 
                                   const SizedBox(height: 10),
@@ -524,7 +626,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: Text(
-                                      "Total Biaya: Rp ${NumberFormat('#,##0.00', 'id_ID').format((meterAkhir - meterAwal) * hargaPerCBM)}",
+                                      "Total Biaya: Rp ${_formatCurrency(totalCost)}",
                                       style: const TextStyle(
                                         color: Color(0xFF17778F),
                                         fontSize: 20,
@@ -535,11 +637,11 @@ class _BillingScreenState extends State<BillingScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 30), // Spasi antara kartu dan tombol
+                            const SizedBox(height: 30), // Space between card and buttons
 
-                            // Tombol Opsi setelah tanggal dipilih dan data billing ditampilkan
+                            // Option buttons after dates are selected and billing data is shown
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 0.0), // No horizontal padding here as it's inside SingleChildScrollView
+                              padding: const EdgeInsets.symmetric(horizontal: 0.0),
                               child: Column(
                                 children: [
                                   ElevatedButton(
@@ -592,7 +694,7 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  // --- Widget Baru: Dialog Riwayat Billing (Hanya List Tanggal) ---
+  // --- New Widget: Billing History List Dialog (Shows only dates) ---
   void _showBillingHistoryDateList(BuildContext context) {
     final Map<String, List<Map<String, dynamic>>> groupedHistory = {};
     for (var record in _billingHistory) {
@@ -627,6 +729,7 @@ class _BillingScreenState extends State<BillingScreen> {
                     itemCount: sortedDates.length,
                     itemBuilder: (context, dateIndex) {
                       final date = sortedDates[dateIndex];
+                      final recordToDisplay = groupedHistory[date]!.first;
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 8.0),
                         elevation: 4,
@@ -635,8 +738,6 @@ class _BillingScreenState extends State<BillingScreen> {
                             borderRadius: BorderRadius.circular(12)),
                         child: InkWell(
                           onTap: () {
-                            // Find the correct record to pass to the detail dialog
-                            final recordToDisplay = groupedHistory[date]!.first; // Assuming one record per date for simplicity
                             Navigator.of(context).pop(); // Close date list dialog
                             _showBillingDetailDialog(context, recordToDisplay);
                           },
@@ -669,7 +770,7 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  // --- Widget Baru: Dialog Detail Billing untuk Tanggal yang Dipilih ---
+  // --- New Widget: Billing Detail Dialog for Selected Date ---
   void _showBillingDetailDialog(BuildContext context, Map<String, dynamic> billingRecord) {
     final recordStartDate = (billingRecord['startDate'] as Timestamp).toDate();
     final recordEndDate = (billingRecord['endDate'] as Timestamp).toDate();
@@ -692,13 +793,13 @@ class _BillingScreenState extends State<BillingScreen> {
               children: [
                 _buildDetailRow("Meter Awal", "${billingRecord['meterAwal']} m\u00B3"),
                 _buildDetailRow("Meter Akhir", "${billingRecord['meterAkhir']} m\u00B3"),
-                _buildDetailRow("Pemakaian", "${billingRecord['usage'].toStringAsFixed(2)} m\u00B3"),
-                _buildDetailRow("Harga per m\u00B3", "Rp ${NumberFormat('#,##0.00', 'id_ID').format(billingRecord['hargaPerCBM'])}"),
+                _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as double).toStringAsFixed(2)} m\u00B3"),
+                _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency((billingRecord['hargaPerCBM'] as num).toDouble())}"),
                 const Divider(height: 15, thickness: 1, color: Colors.grey),
                 Align(
                   alignment: Alignment.centerRight,
                   child: Text(
-                    "Total: Rp ${NumberFormat('#,##0.00', 'id_ID').format(billingRecord['totalCost'])}",
+                    "Total: Rp ${_formatCurrency((billingRecord['totalCost'] as num).toDouble())}",
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 18,
@@ -716,9 +817,112 @@ class _BillingScreenState extends State<BillingScreen> {
                 Navigator.of(context).pop();
               },
             ),
+            TextButton(
+              child: const Text("Hapus", style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the detail dialog first
+                _confirmAndDeleteBillingRecord(context, billingRecord);
+              },
+            ),
           ],
         );
       },
     );
+  }
+
+  // --- New Function: Confirm and Delete Billing Record ---
+  void _confirmAndDeleteBillingRecord(BuildContext context, Map<String, dynamic> billingRecord) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xF2FFFFFF),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Konfirmasi Hapus",
+              style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
+          content: const Text("Apakah Anda yakin ingin menghapus tagihan ini?",
+              style: TextStyle(color: Color(0xFF17778F))),
+          actions: <Widget>[
+            TextButton(
+              child: const Text("Batal", style: TextStyle(color: Color(0xFF17778F))),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            TextButton(
+              child: const Text("Hapus", style: TextStyle(color: Colors.red)),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close confirmation dialog
+                _deleteBillingRecord(billingRecord);
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- New Function: Delete Billing Record from Firestore ---
+  void _deleteBillingRecord(Map<String, dynamic> billingRecord) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Anda perlu masuk untuk menghapus data."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    final String? docIdToDelete = billingRecord['docId'] as String?;
+
+    if (docIdToDelete == null || docIdToDelete.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Gagal menghapus: ID dokumen tidak ditemukan."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      if (kDebugMode) {
+        print("Error: docId not found in billingRecord for deletion.");
+      }
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('billing_records')
+          .doc(docIdToDelete)
+          .delete();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Tagihan berhasil dihapus!"),
+            backgroundColor: Color(0xFF17778F),
+          ),
+        );
+        _loadBillingHistory();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Gagal menghapus tagihan: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      if (kDebugMode) {
+        print("Error deleting billing data: $e");
+      }
+    }
   }
 }

@@ -138,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       fontSize: 15,
-                                      color: Colors.grey,
+                                      color: Color(0xE617778F),
                                     ),
                                   ),
                                   const SizedBox(height: 15),
@@ -154,13 +154,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                     onSaved: (value) {
                                       auth.enteredUsername = value!.trim();
                                     },
-                                    style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                    style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                     decoration: InputDecoration(
                                       hintText: "Masukkan Nama....",
-                                      hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
+                                      hintStyle: TextStyle(color: Color(0xE617778F).withOpacity(0.6)),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(15),
-                                        borderSide: const BorderSide(color: Colors.grey),
+                                        borderSide: const BorderSide(color: Color(0xE617778F)),
                                       ),
                                       focusedBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(15),
@@ -180,7 +180,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,
-                                    color: Colors.grey,
+                                    color: Color(0xE617778F),
                                   ),
                                 ),
                                 const SizedBox(height: 10),
@@ -200,13 +200,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   onSaved: (value) {
                                     auth.enteredEmail = value!.trim();
                                   },
-                                  style: const TextStyle(color: Colors.grey, fontSize: 14),
+                                  style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                   decoration: InputDecoration(
                                     hintText: "Masukkan Email...",
-                                    hintStyle: TextStyle(color: Colors.grey.withOpacity(0.6)),
+                                    hintStyle: TextStyle(color: Color(0xE617778F).withOpacity(0.6)),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(15),
-                                      borderSide: const BorderSide(color: Colors.grey),
+                                      borderSide: const BorderSide(color: Color(0xE617778F)),
                                     ),
                                     focusedBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(15),
@@ -220,7 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             TextfieldPasswordWidget(
                               controller: passwordController,
-                              textColor: Colors.grey,
+                              textColor: Color(0xE617778F),
                               iconColor: const Color(0xFF62C3D0),
                             ),
                             const SizedBox(height: 10), // Adjusted space
