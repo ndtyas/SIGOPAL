@@ -1,61 +1,67 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Import this
+import 'package:firebase_database/firebase_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final _fireAuth = FirebaseAuth.instance;
 final _fireStore = FirebaseFirestore.instance;
+final _fireRealtimeDb = FirebaseDatabase.instance;
 
 class AuthProvider extends ChangeNotifier {
   final form = GlobalKey<FormState>();
 
-  var islogin = true;
-  var enteredEmail = '';
-  var enteredPassword = '';
-  var enteredUsername = '';
+  bool islogin = true;
+  String enteredEmail = '';
+  String enteredPassword = '';
+  String enteredUsername = '';
+  String enteredNode = '';
 
-  bool showTopError = false;
-  String topErrorMessage = '';
 
-  // New: "Remember Me" state
+  bool _showTopError = false;
+  String _topErrorMessage = '';
+
+  // "Remember Me" state
   bool _rememberMe = false;
-  bool get rememberMe => _rememberMe;
 
-  // New: SharedPreferences instance
+  // SharedPreferences instance
   late SharedPreferences _prefs;
 
   AuthProvider() {
-    _initPrefs(); // Call initialization in the constructor
+    _initPrefs();
   }
 
-  // New: Initialize SharedPreferences and load saved state
+  // Public getters for UI to consume
+  bool get showTopError => _showTopError;
+  String get topErrorMessage => _topErrorMessage;
+  bool get rememberMe => _rememberMe;
+
+  // Initialize SharedPreferences and load saved state
   Future<void> _initPrefs() async {
     _prefs = await SharedPreferences.getInstance();
     _loadRememberMeState();
-    _loadSavedCredentials(); // Load saved credentials on startup
+    _loadSavedCredentials();
   }
 
-  // New: Load the last saved "remember me" preference
+  // Load the last saved "remember me" preference
   void _loadRememberMeState() {
     _rememberMe = _prefs.getBool('remember_me') ?? false;
-    notifyListeners(); // Notify listeners that rememberMe state might have changed
   }
 
-  // New: Set "remember me" preference and save it
-  void setRememberMe(bool value) {
+  // Set "remember me" preference and save it
+  void setRememberMe(bool value) async {
     _rememberMe = value;
-    _prefs.setBool('remember_me', value);
+    await _prefs.setBool('remember_me', value);
     notifyListeners();
   }
 
-  // New: Save email and password to SharedPreferences
-  // IMPORTANT: For production, consider storing a secure token, not raw password.
+  // Save email and password to SharedPreferences
   Future<void> _saveCredentials(String email, String password) async {
     await _prefs.setString('saved_email', email);
     await _prefs.setString('saved_password', password);
   }
 
-  // New: Load saved credentials from SharedPreferences
+  // Load saved credentials from SharedPreferences
   Future<void> _loadSavedCredentials() async {
     _rememberMe = _prefs.getBool('remember_me') ?? false;
     if (_rememberMe) {
@@ -64,26 +70,32 @@ class AuthProvider extends ChangeNotifier {
       if (savedEmail != null && savedPassword != null) {
         enteredEmail = savedEmail;
         enteredPassword = savedPassword;
-        // Do NOT automatically log in here. Let the UI trigger the login.
-        notifyListeners(); // Update UI with pre-filled fields
       }
     }
   }
 
-  // New: Clear saved credentials from SharedPreferences
+  // Clear saved credentials from SharedPreferences
   Future<void> clearSavedCredentials() async {
     await _prefs.remove('saved_email');
     await _prefs.remove('saved_password');
-    await _prefs.setBool('remember_me', false); // Reset the checkbox state
-    enteredEmail = ''; // Clear the in-memory values too
+    await _prefs.setBool('remember_me', false);
+    enteredEmail = '';
     enteredPassword = '';
     _rememberMe = false;
     notifyListeners();
   }
 
+  // Public method to set top error message and notify listeners
+  void setTopError(String message) {
+    _showTopError = true;
+    _topErrorMessage = message;
+    notifyListeners();
+  }
+
+  // Public method to clear top error and notify listeners
   void clearTopError() {
-    showTopError = false;
-    topErrorMessage = '';
+    _showTopError = false;
+    _topErrorMessage = '';
     notifyListeners();
   }
 
@@ -91,11 +103,16 @@ class AuthProvider extends ChangeNotifier {
     required Function onSuccess,
     required Function(String message) onError,
   }) async {
-    final isvalid = form.currentState?.validate() ?? false;
-    if (!isvalid) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final isValid = form.currentState?.validate() ?? false;
+    if (!isValid) {
+      setTopError('Masukkan email dan password yang valid.'); 
+      return;
+    }
 
     form.currentState?.save();
-    clearTopError(); // Clear previous errors
+    clearTopError();
 
     try {
       final userCredential = await _fireAuth.signInWithEmailAndPassword(
@@ -105,23 +122,23 @@ class AuthProvider extends ChangeNotifier {
 
       final user = userCredential.user;
 
+      // Check for email verification before allowing login
       if (user != null && !user.emailVerified) {
-        await _fireAuth.signOut(); // Ensure user is logged out if email not verified
-        showTopError = true;
-        topErrorMessage = 'Aktivasi Akun Terlebih Dahulu';
-        notifyListeners();
+        await _fireAuth.signOut();
+        setTopError('Aktivasi Akun Terlebih Dahulu. Silakan cek email Anda.');
+        onError(topErrorMessage);
         return;
       }
 
-      // New: Save credentials if "remember me" is checked
+      // Save credentials if "remember me" is checked
       if (_rememberMe) {
         await _saveCredentials(enteredEmail, enteredPassword);
       } else {
-        await clearSavedCredentials(); // Clear if it was unchecked
+        await clearSavedCredentials();
       }
 
-      clearTopError();
-      onSuccess();
+      clearTopError(); // Clear any error after successful login
+      onSuccess(); // Now onSuccess will navigate to NodeScreen or HomePage
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'Terjadi kesalahan saat masuk.';
       if (e.code == 'user-not-found' || e.code == 'wrong-password') {
@@ -130,71 +147,157 @@ class AuthProvider extends ChangeNotifier {
         errorMessage = 'Format email tidak valid.';
       } else if (e.code == 'too-many-requests') {
         errorMessage = 'Terlalu banyak percobaan login. Coba lagi nanti.';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'Tidak ada koneksi internet. Silakan coba lagi.';
       }
-      showTopError = true;
-      topErrorMessage = errorMessage;
-      notifyListeners();
+      setTopError(errorMessage); // Use new method
       onError(errorMessage);
     } catch (e) {
-      showTopError = true;
-      topErrorMessage = 'Terjadi kesalahan tidak diketahui: $e';
-      notifyListeners();
+      setTopError('Terjadi kesalahan tidak diketahui: $e'); // Use new method
       onError('Terjadi kesalahan tidak diketahui: $e');
     }
   }
 
   Future<void> register({
     required Function(String message) onError,
+    required Function onSuccess,
   }) async {
-    final isvalid = form.currentState?.validate() ?? false;
-    if (!isvalid) return;
+    // Dismiss keyboard
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final isValid = form.currentState?.validate() ?? false;
+    if (!isValid) {
+      setTopError('Harap lengkapi semua bidang yang diperlukan dengan benar.');
+      return;
+    }
 
     form.currentState?.save();
-    clearTopError(); // Clear previous errors
+    clearTopError();
 
     try {
+      // 1. Create user with Firebase Authentication
       final userCredential = await _fireAuth.createUserWithEmailAndPassword(
         email: enteredEmail,
         password: enteredPassword,
       );
 
+      // 2. Update user's display name in Firebase Auth
       await userCredential.user!.updateDisplayName(enteredUsername);
 
+      // 3. Store user data to Firestore (without node yet)
       await _fireStore.collection('users').doc(userCredential.user!.uid).set({
         'username': enteredUsername,
         'email': enteredEmail,
+        'node': null,
         'createdAt': Timestamp.now(),
+        'uid': userCredential.user!.uid,
       });
 
+      // 4. Send email verification
       await userCredential.user!.sendEmailVerification();
-      await _fireAuth.signOut(); // Logout after registration
+      await _fireAuth.signOut();
 
-      // New: If rememberMe is checked during registration, save credentials
-      // This might be useful if you want to auto-fill the login screen after registration
+      // If rememberMe is checked during registration, save credentials
       if (_rememberMe) {
         await _saveCredentials(enteredEmail, enteredPassword);
       } else {
+        // If not remembering, ensure previous saved credentials are cleared
         await clearSavedCredentials();
       }
 
-      onError('Registrasi berhasil! Silakan aktivasi email sebelum login.');
+      onSuccess(); // Indicate successful registration to move to login screen
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'Terjadi kesalahan saat pendaftaran.';
       if (e.code == 'email-already-in-use') {
         errorMessage = 'Email ini sudah terdaftar.';
       } else if (e.code == 'weak-password') {
-        errorMessage = 'Password terlalu lemah.';
+        errorMessage = 'Kata sandi terlalu lemah.';
       } else if (e.code == 'invalid-email') {
         errorMessage = 'Format email tidak valid.';
+      } else if (e.code == 'network-request-failed') {
+        errorMessage = 'Tidak ada koneksi internet. Silakan coba lagi.';
       }
-      showTopError = true;
-      topErrorMessage = errorMessage;
-      notifyListeners();
+      setTopError(errorMessage);
       onError(errorMessage);
     } catch (e) {
-      showTopError = true;
-      topErrorMessage = 'Terjadi kesalahan tidak diketahui: $e';
-      notifyListeners();
+      setTopError('Terjadi kesalahan tidak diketahui: $e');
+      onError('Terjadi kesalahan tidak diketahui: $e');
+    }
+  }
+
+  // New method to save user's node after login
+  Future<void> saveUserNode({
+    required String node,
+    required Function onSuccess,
+    required Function(String message) onError,
+  }) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    if (node.trim().isEmpty) {
+      setTopError('Node tidak boleh kosong.'); // Use new method
+      onError(topErrorMessage);
+      return;
+    }
+
+    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(node.trim())) {
+      setTopError('Node hanya boleh berisi huruf, angka, underscore, dan dash'); 
+      onError(topErrorMessage);
+      return;
+    }
+
+    clearTopError();
+
+    final user = _fireAuth.currentUser;
+    if (user == null) {
+      setTopError('Tidak ada pengguna yang masuk.'); 
+      onError(topErrorMessage);
+      return;
+    }
+
+    try {
+      // 1. Check if the node exists in Realtime Database
+      final nodeRef = _fireRealtimeDb.ref('last_data').child(node);
+      final snapshot = await nodeRef.get();
+
+      if (!snapshot.exists || snapshot.value == null) {
+        setTopError('Node "$node" tidak ditemukan di database. Harap masukkan node yang valid.');
+        onError(topErrorMessage);
+        return;
+      }
+
+      // 2. Check if the node is already associated with another user in Firestore
+      final existingNodeUserQuery = await _fireStore
+          .collection('users')
+          .where('node', isEqualTo: node)
+          .limit(1)
+          .get();
+
+      if (existingNodeUserQuery.docs.isNotEmpty) {
+        // Allow the current user to re-save their *own* existing node, but prevent assigning a node already taken by someone else
+        final existingNodeDoc = existingNodeUserQuery.docs.first;
+        if (existingNodeDoc.id != user.uid) {
+          setTopError('Node "$node" sudah digunakan oleh pengguna lain. Silakan pilih node lain.'); 
+          onError(topErrorMessage);
+          return;
+        }
+      }
+
+      // 3. Update user data in Firestore with the node
+      await _fireStore.collection('users').doc(user.uid).update({
+        'node': node,
+      });
+
+      enteredNode = node;
+      onSuccess();
+    } on FirebaseException catch (e) {
+      String errorMessage = 'Terjadi kesalahan saat menyimpan node.';
+      if (e.code == 'network-request-failed') {
+        errorMessage = 'Tidak ada koneksi internet. Silakan coba lagi.';
+      }
+      setTopError(errorMessage);
+      onError(errorMessage);
+    } catch (e) {
+      setTopError('Terjadi kesalahan tidak diketahui: $e'); 
       onError('Terjadi kesalahan tidak diketahui: $e');
     }
   }
@@ -202,26 +305,35 @@ class AuthProvider extends ChangeNotifier {
   Future<void> resendVerification({
     required Function(String message) onFeedback,
   }) async {
-    final isValid = form.currentState?.validate() ?? false;
-    if (!isValid) return;
+    FocusManager.instance.primaryFocus?.unfocus();
 
-    form.currentState?.save();
-    clearTopError(); // Clear previous errors
+    clearTopError();
 
     try {
-      // Temporarily sign in to get the user object for verification
-      final userCredential = await _fireAuth.signInWithEmailAndPassword(
-        email: enteredEmail,
-        password: enteredPassword,
-      );
+      User? currentUser = _fireAuth.currentUser;
 
-      if (!userCredential.user!.emailVerified) {
-        await userCredential.user!.sendEmailVerification();
-        await _fireAuth.signOut(); // Logout again after sending
-        onFeedback("Link verifikasi telah dikirim ulang ke email Anda.");
+      // If current user is null or doesn't match the entered email, try to sign in
+      if (currentUser == null || currentUser.email != enteredEmail) {
+        final userCredential = await _fireAuth.signInWithEmailAndPassword(
+          email: enteredEmail,
+          password: enteredPassword,
+        );
+        currentUser = userCredential.user;
+      }
+
+      if (currentUser != null) {
+        if (!currentUser.emailVerified) {
+          await currentUser.sendEmailVerification();
+          await _fireAuth.signOut(); 
+          onFeedback("Link verifikasi telah dikirim ulang ke email Anda.");
+        } else {
+          await _fireAuth.signOut(); 
+          onFeedback("Email sudah diverifikasi, silakan login.");
+        }
       } else {
-        await _fireAuth.signOut(); // Logout if already verified
-        onFeedback("Email sudah diverifikasi, silakan login.");
+        String message = "Tidak dapat mengirim ulang verifikasi. Harap masukkan email dan password yang benar.";
+        onFeedback(message);
+        setTopError(message);
       }
     } on FirebaseAuthException catch (e) {
       String feedbackMessage = "Gagal mengirim ulang verifikasi: ";
@@ -231,17 +343,15 @@ class AuthProvider extends ChangeNotifier {
         feedbackMessage += 'Format email tidak valid.';
       } else if (e.code == 'too-many-requests') {
         feedbackMessage += 'Terlalu banyak percobaan. Coba lagi nanti.';
+      } else if (e.code == 'network-request-failed') {
+        feedbackMessage += 'Tidak ada koneksi internet. Silakan coba lagi.';
       } else {
         feedbackMessage += e.message ?? 'Terjadi kesalahan.';
       }
-      showTopError = true;
-      topErrorMessage = feedbackMessage;
-      notifyListeners();
+      setTopError(feedbackMessage);
       onFeedback(feedbackMessage);
     } catch (e) {
-      showTopError = true;
-      topErrorMessage = 'Terjadi kesalahan tidak diketahui: $e';
-      notifyListeners();
+      setTopError('Terjadi kesalahan tidak diketahui: $e');
       onFeedback("Terjadi kesalahan tidak diketahui saat mengirim ulang verifikasi: $e");
     }
   }
@@ -249,7 +359,23 @@ class AuthProvider extends ChangeNotifier {
   // Add a signOut method to clear credentials on explicit logout
   Future<void> signOut() async {
     await _fireAuth.signOut();
-    await clearSavedCredentials(); // Clear saved data on logout
+    await clearSavedCredentials();
     notifyListeners();
+  }
+
+  // Get user's node from Firestore
+  Future<String?> getUserNode() async {
+    final user = _fireAuth.currentUser;
+    if (user != null) {
+      try {
+        final doc = await _fireStore.collection('users').doc(user.uid).get();
+        if (doc.exists) {
+          return doc.data()?['node'];
+        }
+      } catch (e) {
+        debugPrint('Error getting user node: $e');
+      }
+    }
+    return null;
   }
 }

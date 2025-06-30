@@ -5,15 +5,7 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 /// Default [FirebaseOptions] for use with your Firebase apps.
-///
-/// Example:
-/// ```dart
-/// import 'firebase_options.dart';
-/// // ...
-/// await Firebase.initializeApp(
-///   options: DefaultFirebaseOptions.currentPlatform,
-/// );
-/// ```
+
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -30,10 +22,7 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -51,6 +40,7 @@ class DefaultFirebaseOptions {
     appId: '1:819699009606:android:ef15c6bc88155657e2a247',
     messagingSenderId: '819699009606',
     projectId: 'sigopal',
+    databaseURL: 'https://sigopal-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'sigopal.firebasestorage.app',
   );
 
@@ -70,8 +60,20 @@ class DefaultFirebaseOptions {
     messagingSenderId: '819699009606',
     projectId: 'sigopal',
     authDomain: 'sigopal.firebaseapp.com',
+    databaseURL: 'https://sigopal-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'sigopal.firebasestorage.app',
     measurementId: 'G-FYK49BM325',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyDVILo9spzZGrAQeLQZyEnxcjh4Cpt9Ffw',
+    appId: '1:819699009606:web:b9669bcd6e20e16fe2a247',
+    messagingSenderId: '819699009606',
+    projectId: 'sigopal',
+    authDomain: 'sigopal.firebaseapp.com',
+    databaseURL: 'https://sigopal-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'sigopal.firebasestorage.app',
+    measurementId: 'G-PNLRQXR5NT',
   );
 
 }

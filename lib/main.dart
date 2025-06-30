@@ -16,6 +16,7 @@ import 'screen/volume_page.dart';
 import 'screen/monitoring_screen.dart'; 
 import 'screen/controlling_screen.dart';
 import 'screen/billing_screen.dart';
+import 'screen/node_screen.dart'; // Import the new node screen
 
 void main() async {
   // Ensure Flutter widgets are initialized before Firebase.
@@ -46,12 +47,9 @@ class MyApp extends StatelessWidget {
         title: 'SIGOPAL',
         theme: ThemeData.dark().copyWith(
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.teal, // Keeping your specified seed color
-            brightness: Brightness.dark, // Keeping your specified dark brightness
+            seedColor: Colors.teal,
+            brightness: Brightness.dark,
           ),
-          // You might want to define other theme properties here for consistency
-          // For example, text themes, app bar themes, etc.
-          // useMaterial3: true, // You can explicitly enable Material 3 if desired
         ),
         // Define the initial route for the application
         initialRoute: '/welcome',
@@ -66,6 +64,7 @@ class MyApp extends StatelessWidget {
           '/monitoring': (context) => const MonitoringScreen(), // Route for MonitoringScreen
           '/controlling': (context) => const ControllingScreen(), // Route for ControllingScreen
           '/billing': (context) => const BillingScreen(), // Route for BillingScreen
+          '/node_screen': (context) => const NodeScreen(), // Route for the new NodeScreen
         },
       ),
     );
@@ -88,9 +87,23 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // If user is logged in and their email is verified, show the HomePage
+        // If user is logged in and their email is verified
         if (snapshot.hasData && snapshot.data!.emailVerified) {
-          return const HomePage();
+          // Check if the user has a node assigned
+          return FutureBuilder<String?>(
+            future: Provider.of<local_auth.AuthProvider>(context, listen: false).getUserNode(),
+            builder: (context, nodeSnapshot) {
+              if (nodeSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (nodeSnapshot.data == null || nodeSnapshot.data!.isEmpty) {
+                return const NodeScreen(); // Navigate to NodeScreen if no node
+              }
+              return const HomePage(); // Otherwise, navigate to HomePage
+            },
+          );
         }
 
         // Otherwise, if no user is logged in or email is not verified, show the LoginScreen

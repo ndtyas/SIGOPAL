@@ -6,7 +6,7 @@ class TextfieldPasswordWidget extends StatefulWidget {
   const TextfieldPasswordWidget({
     super.key,
     required this.controller,
-    this.textColor = Colors.black, // Tambahkan parameter opsional
+    this.textColor = Colors.black,
     this.iconColor = Colors.black,
   });
 

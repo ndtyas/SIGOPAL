@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
 
 class VolumePage extends StatefulWidget {
   const VolumePage({super.key});
@@ -10,66 +11,198 @@ class VolumePage extends StatefulWidget {
 }
 
 class _VolumePageState extends State<VolumePage> {
-  // State variable to hold the fetched water level value (e.g., in cm or percentage)
-  double _currentWaterLevel = -1.0; // Default to an invalid value
-  String _waterLevelCategory = 'UNKNOWN'; // 'LOW', 'MEDIUM', 'FULL', 'UNKNOWN'
-  Color _statusColor = Colors.grey; // Default color
+  // Constants
+  static const String _waterLevelPath = 'water_level';
+
+  // State variables to hold the fetched water level value
+  double _currentWaterLevel = -1.0;
+  String _waterLevelCategory = 'UNKNOWN';
+  Color _statusColor = Colors.grey;
+  bool _isLoading = true;
+  bool _hasData = false; // Track if we have received any data
+
+  // Firebase Realtime Database reference
+  late DatabaseReference _databaseRef;
+  StreamSubscription<DatabaseEvent>? _dataSubscription;
 
   @override
   void initState() {
     super.initState();
-    _fetchWaterLevel(); // Fetch water level data when the screen initializes
+    _initializeFirebase();
   }
 
-  // Function to fetch water level data from your API
-  Future<void> _fetchWaterLevel() async {
-    try {
-      // Replace with your actual API endpoint to GET water level status
-      // Example: 'https://your-backend.com/api/water_level_sensor'
-      // Assume the API returns a JSON like: {"level_cm": 75.5} or {"percentage": 0.85}
-      final response = await http.get(Uri.parse('YOUR_API_ENDPOINT_FOR_CONTROL_DATA_GET'));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        // Adjust this key based on your actual API response (e.g., 'level_cm', 'percentage', 'water_volume')
-        final double? level = data['level_cm']?.toDouble();
-
-        if (level != null) {
-          setState(() {
-            _currentWaterLevel = level;
-            // Define your water level thresholds here
-            // Example: Assuming max tank height is 100 cm
-            if (_currentWaterLevel >= 80) {
-              _waterLevelCategory = 'FULL';
-              _statusColor = const Color(0xFF17778F); // Your primary blue
-            } else if (_currentWaterLevel >= 30 && _currentWaterLevel < 80) {
-              _waterLevelCategory = 'MEDIUM';
-              _statusColor = Colors.orange;
-            } else if (_currentWaterLevel >= 0 && _currentWaterLevel < 30) {
-              _waterLevelCategory = 'LOW';
-              _statusColor = Colors.red;
-            } else {
-              _waterLevelCategory = 'UNKNOWN';
-              _statusColor = Colors.grey;
-            }
-          });
-        } else {
-          setState(() {
-            _waterLevelCategory = 'UNKNOWN';
-            _statusColor = Colors.grey;
-          });
-          _showErrorDialog('Data level air tidak ditemukan dalam respons API.');
-        }
-      } else {
-        _showErrorDialog('Gagal memuat status air. Kode status: ${response.statusCode}');
-      }
-    } catch (e) {
-      _showErrorDialog('Error mengambil status air: $e');
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Pindahkan fetch data ke sini setelah context tersedia
+    if (_isLoading) {
+      _fetchWaterLevel();
     }
   }
 
+  @override
+  void dispose() {
+    _dataSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Initialize Firebase Database reference menggunakan default instance
+  void _initializeFirebase() {
+    try {
+      _databaseRef = FirebaseDatabase.instance.ref();
+      developer.log('Firebase Database initialized successfully', name: 'VolumePage');
+    } catch (e) {
+      developer.log('Error initializing Firebase: $e', name: 'VolumePage');
+      // Tunda error dialog sampai context tersedia
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showErrorDialog('Gagal menginisialisasi Firebase: $e');
+        }
+      });
+    }
+  }
+
+  // Real-time data fetching from Firebase Realtime Database
+  Future<void> _fetchWaterLevel() async {
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoading = true;
+      _hasData = false;
+      _currentWaterLevel = -1.0;
+      _waterLevelCategory = 'UNKNOWN';
+      _statusColor = Colors.grey;
+    });
+
+    try {
+      _dataSubscription?.cancel();
+
+      // Listen to real-time updates from Firebase
+      _dataSubscription = _databaseRef.child(_waterLevelPath).onValue.listen(
+        (event) {
+          if (mounted) {
+            if (event.snapshot.exists) {
+              final data = event.snapshot.value;
+              developer.log('Received data: $data', name: 'VolumePage');
+
+              double? level;
+
+              // Handle different data structures for 'water_level'
+              if (data is Map<dynamic, dynamic>) {
+                if (data['level_cm'] != null) {
+                  level = (data['level_cm'] as num).toDouble();
+                } else if (data['value'] != null) {
+                  level = (data['value'] as num).toDouble();
+                } else if (data['level'] != null) {
+                  level = (data['level'] as num).toDouble();
+                } else if (data['percentage'] != null) {
+                  // Convert percentage to cm (assuming 100cm max height for calculation example)
+                  level = ((data['percentage'] as num).toDouble() * 100);
+                  developer.log('Converted percentage to cm: $level',
+                      name: 'VolumePage');
+                }
+              } else if (data is num) {
+                level = data.toDouble();
+              }
+
+              if (level != null) {
+                setState(() {
+                  _currentWaterLevel = level!;
+                  _hasData = true;
+                  _updateWaterLevelCategory();
+                  _isLoading = false;
+                });
+                developer.log(
+                    'Water level updated: $_currentWaterLevel cm, Category: $_waterLevelCategory',
+                    name: 'VolumePage');
+              } else {
+                // Data exists but is unparseable
+                setState(() {
+                  _currentWaterLevel = -1.0;
+                  _waterLevelCategory = 'UNKNOWN';
+                  _statusColor = Colors.grey;
+                  _hasData = false;
+                  _isLoading = false;
+                });
+                developer.log('Water level data is null or unparseable.',
+                    name: 'VolumePage');
+              }
+            } else {
+              // No data exists at the path
+              setState(() {
+                _currentWaterLevel = -1.0;
+                _waterLevelCategory = 'UNKNOWN';
+                _statusColor = Colors.grey;
+                _hasData = false;
+                _isLoading = false;
+              });
+              developer.log('No data found at $_waterLevelPath',
+                  name: 'VolumePage');
+            }
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            developer.log('Error fetching data: $error', name: 'VolumePage');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showErrorDialog('Error mengambil data level air: $error');
+              }
+            });
+            setState(() {
+              _isLoading = false;
+              _hasData = false;
+              _currentWaterLevel = -1.0;
+              _waterLevelCategory = 'UNKNOWN';
+              _statusColor = Colors.grey;
+            });
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        developer.log('Error initiating data fetch: $e', name: 'VolumePage');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showErrorDialog('Error menginisialisasi pengambilan data: $e');
+          }
+        });
+        setState(() {
+          _isLoading = false;
+          _hasData = false;
+          _currentWaterLevel = -1.0;
+          _waterLevelCategory = 'UNKNOWN';
+          _statusColor = Colors.grey;
+        });
+      }
+    }
+  }
+
+  // Function to update water level category based on current level
+  void _updateWaterLevelCategory() {
+    // Define your water level thresholds here (example: assuming max tank height is 100 cm for categorization)
+    if (_currentWaterLevel >= 80) {
+      _waterLevelCategory = 'FULL';
+      _statusColor = const Color(0xFF17778F);
+    } else if (_currentWaterLevel >= 30 && _currentWaterLevel < 80) {
+      _waterLevelCategory = 'MEDIUM';
+      _statusColor = Colors.orange;
+    } else if (_currentWaterLevel >= 0 && _currentWaterLevel < 30) {
+      _waterLevelCategory = 'LOW';
+      _statusColor = Colors.red;
+    } else {
+      _waterLevelCategory = 'UNKNOWN';
+      _statusColor = Colors.grey;
+    }
+  }
+
+  // Manual refresh function - restart real-time listener
+  void _refreshData() {
+    _fetchWaterLevel();
+  }
+
   void _showErrorDialog(String message) {
-    if (!mounted) return; // Ensure the widget is still mounted
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -82,6 +215,13 @@ class _VolumePageState extends State<VolumePage> {
             },
             child: const Text('Oke'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _refreshData();
+            },
+            child: const Text('Coba Lagi'),
+          ),
         ],
       ),
     );
@@ -89,190 +229,230 @@ class _VolumePageState extends State<VolumePage> {
 
   @override
   Widget build(BuildContext context) {
-    // Get screen dimensions for adaptive sizing
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-
-    // Use screenHeight for proportional vertical padding
     final double dynamicTopPadding = screenHeight * 0.03;
 
     return Scaffold(
-      body: Container(
-        // Consistent Gradient Background
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF62C3D0), // Lighter blue
-              Color(0xFF17778F), // Darker blue
-            ],
-          ),
-        ),
-        child: Stack(
+      backgroundColor: const Color(0xFF62C3D0),
+      body: SafeArea(
+        child: Column(
           children: [
-            // Background image with consistent opacity
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.2, // Consistent with other screens
-                child: Image.asset(
-                  'images/air.png',
-                  fit: BoxFit.cover,
+            // --- Header ---
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  20.0, dynamicTopPadding, 20.0, 20),
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back,
+                        color: Colors.white,
+                        size: 28),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  // Add refresh button here, next to the back button
+                  IconButton(
+                    icon: const Icon(Icons.refresh,
+                        color: Colors.white,
+                        size: 28),
+                    onPressed: _refreshData,
+                    tooltip: 'Refresh Data',
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Image.asset(
+                        'images/logoPutih.png',
+                        width: screenWidth * 0.09,
+                        height: screenWidth * 0.09,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.image_not_supported,
+                            size: 32,
+                            color: Colors.white,
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      Image.asset(
+                        'images/logoUndip.png',
+                        width: screenWidth * 0.09,
+                        height: screenWidth * 0.09,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.image_not_supported,
+                            size: 32,
+                            color: Colors.white,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Title box (first box) - consistent styling, height adjusts to content
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xF2FFFFFF),
+                borderRadius: BorderRadius.circular(15),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x26000000),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Text(
+                  "PANTAU STATUS BAK PENYIMPANAN AIR",
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF17778F),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
-            SafeArea(
-              child: Column(
-                children: [
-                  // --- Header ---
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                        20.0, dynamicTopPadding, 20.0, 20), // Using dynamic top padding
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              color: Colors.white,
-                              size: 28), // Consistent white icon, larger
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        const Spacer(), // Pushes icons to the right
-                        Row(
-                          children: [
-                            Image.asset(
-                              'images/logoPutih.png',
-                              width: screenWidth * 0.09, // Responsive logo size
-                              height: screenWidth * 0.09,
-                            ),
-                            const SizedBox(width: 10), // Consistent spacing
-                            Image.asset(
-                              'images/logoUndip.png',
-                              width: screenWidth * 0.09, // Responsive logo size
-                              height: screenWidth * 0.09,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
 
-                  const SizedBox(height: 20),
+            const SizedBox(height: 40),
 
-                  // Title box (first box) - consistent styling, height adjusts to content
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(
-                          0xF2FFFFFF), // 95% opacity white, consistent with ControllingScreen
-                      borderRadius:
-                          BorderRadius.circular(15), // Consistent border radius
-                      boxShadow: [
-                        // Consistent shadow
-                        BoxShadow(
-                          color: const Color(0x26000000), // Approx 15% opacity black
-                          blurRadius: 10,
-                          spreadRadius: 2,
-                          offset: const Offset(0, 5),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        "PANTAU STATUS BAK PENYIMPANAN AIR",
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF17778F),
-                        ),
-                        textAlign: TextAlign.center,
+            // Tank and label container (second box) - height adjusts to content
+            Expanded(
+              child: SingleChildScrollView(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xF2FFFFFF),
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x26000000),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                        offset: Offset(0, 5),
                       ),
-                    ),
+                    ],
                   ),
-
-                  const SizedBox(height: 40),
-
-                  // Tank and label container (second box) - height adjusts to content
-                  Expanded(
-                    // Use Expanded to allow the card to take available space
-                    child: SingleChildScrollView(
-                      // Add SingleChildScrollView for potential overflow if content becomes too large
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                              0xF2FFFFFF), // 95% opacity white, consistent with ControllingScreen
-                          borderRadius:
-                              BorderRadius.circular(15), // Consistent border radius
-                          boxShadow: [
-                            // Consistent shadow
-                            BoxShadow(
-                              color: const Color(0x26000000), // Approx 15% opacity black
-                              blurRadius: 10,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          // Use Column to wrap content and allow mainAxisSize.min
-                          mainAxisSize:
-                              MainAxisSize.min, // This makes the box adjust its height
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment
-                                  .center, // Center vertically within the row
-                              children: [
-                                // Tank Image - Responsive width
-                                Image.asset(
-                                  'images/tank3.png',
-                                  width: screenWidth *
-                                      0.45, // About 45% of screen width
-                                  height: screenHeight *
-                                      0.4, // About 40% of screen height
-                                  fit: BoxFit.contain,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // Hitung ukuran responsif berdasarkan lebar container yang tersedia
+                          final availableWidth = constraints.maxWidth;
+                          final isSmallScreen = availableWidth < 350;
+                          final isMediumScreen = availableWidth >= 350 && availableWidth < 500;
+                          
+                          // Tentukan ukuran gambar berdasarkan ukuran layar
+                          double tankWidth;
+                          double tankHeight;
+                          double statusWidth;
+                          
+                          if (isSmallScreen) {
+                            // Layar kecil (HP compact)
+                            tankWidth = availableWidth * 0.5;
+                            tankHeight = screenHeight * 0.35;
+                            statusWidth = availableWidth * 0.4;
+                          } else if (isMediumScreen) {
+                            // Layar sedang (HP normal)
+                            tankWidth = availableWidth * 0.45;
+                            tankHeight = screenHeight * 0.4;
+                            statusWidth = availableWidth * 0.35;
+                          } else {
+                            // Layar besar (tablet)
+                            tankWidth = availableWidth * 0.4;
+                            tankHeight = screenHeight * 0.45;
+                            statusWidth = availableWidth * 0.3;
+                          }
+                          
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Tank Image - Responsive berdasarkan ukuran layar
+                              Flexible(
+                                flex: isSmallScreen ? 6 : 5,
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth: tankWidth,
+                                    maxHeight: tankHeight,
+                                  ),
+                                  child: Image.asset(
+                                    'images/tank3.png',
+                                    width: tankWidth,
+                                    height: tankHeight,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        width: tankWidth,
+                                        height: tankHeight,
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey[300],
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          Icons.water_drop,
+                                          size: isSmallScreen ? 60 : 80,
+                                          color: const Color(0xFF17778F),
+                                        ),
+                                      );
+                                    },
+                                  ),
                                 ),
+                              ),
 
-                                const SizedBox(width: 10),
+                              SizedBox(width: isSmallScreen ? 5 : 10),
 
-                                // Arrow indicators and labels
-                                Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Dynamically show only the current status
-                                    if (_waterLevelCategory == 'FULL')
-                                      _buildStatusRow('FULL', true),
-                                    if (_waterLevelCategory == 'MEDIUM') ...[
-                                      SizedBox(
-                                          height: screenHeight *
-                                              0.05), // Space for FULL if it were there
-                                      _buildStatusRow('MEDIUM', true),
+                              // Status indicators and labels dengan lebar yang fleksibel
+                              Flexible(
+                                flex: isSmallScreen ? 4 : 4,
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth: statusWidth,
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      // Show loading indicator when loading or no data
+                                      if (_isLoading || !_hasData)
+                                        SizedBox(
+                                          width: isSmallScreen ? 25 : 30,
+                                          height: isSmallScreen ? 25 : 30,
+                                          child: const CircularProgressIndicator(
+                                            color: Color(0xFF17778F),
+                                            strokeWidth: 3,
+                                          ),
+                                        )
+                                      // Show status when we have data
+                                      else
+                                        _buildCategoryStatusRow(
+                                            _waterLevelCategory,
+                                            true,
+                                            isSmallScreen
+                                        ),
                                     ],
-                                    if (_waterLevelCategory == 'LOW') ...[
-                                      SizedBox(
-                                          height: screenHeight *
-                                              0.05), // Space for FULL if it were there
-                                      SizedBox(
-                                          height: screenHeight *
-                                              0.05), // Space for MEDIUM if it were there
-                                      _buildStatusRow('LOW', true),
-                                    ],
-                                    if (_waterLevelCategory == 'UNKNOWN')
-                                      _buildStatusRow('UNKNOWN', true),
-                                  ],
+                                  ),
                                 ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ],
@@ -281,25 +461,26 @@ class _VolumePageState extends State<VolumePage> {
     );
   }
 
-  // Helper widget to build each status row with dynamic highlighting
-  Widget _buildStatusRow(String statusText, bool isCurrentStatus) {
+  // Helper widget to build the category status row (e.g., "FULL", "MEDIUM", "LOW" with arrow)
+  Widget _buildCategoryStatusRow(String statusText, bool isCurrentStatus, bool isSmallScreen) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Icon(
           Icons.arrow_right,
-          color: isCurrentStatus
-              ? _statusColor
-              : const Color(0xFF17778F), // Highlight current status
+          color: _statusColor,
+          size: isSmallScreen ? 20 : 24,
         ),
         const SizedBox(width: 5),
-        Text(
-          statusText,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: isCurrentStatus
-                ? _statusColor
-                : const Color(0xFF17778F), // Highlight current status
+        Flexible(
+          child: Text(
+            statusText,
+            style: TextStyle(
+              fontSize: isSmallScreen ? 16 : 18,
+              fontWeight: FontWeight.bold,
+              color: _statusColor,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],

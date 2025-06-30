@@ -6,7 +6,7 @@ class TextfieldEmailWidget extends StatefulWidget {
   const TextfieldEmailWidget({
     super.key,
     required this.controller,
-    this.textColor = Colors.black, // tambahkan textColor opsional
+    this.textColor = Colors.black, 
   });
 
   final TextEditingController controller;
@@ -28,7 +28,7 @@ class _TextfieldEmailWidgetState extends State<TextfieldEmailWidget> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 15,
-            color: widget.textColor, // <-- warna label
+            color: widget.textColor,
           ),
         ),
         const SizedBox(height: 15),
@@ -36,7 +36,7 @@ class _TextfieldEmailWidgetState extends State<TextfieldEmailWidget> {
           controller: widget.controller,
           style: TextStyle(color: widget.textColor,
           fontSize: 14,
-          ), // <-- warna teks input
+          ),
           autovalidateMode: AutovalidateMode.onUserInteraction,
           validator: (value) {
             if (value!.isEmpty) {
@@ -51,7 +51,7 @@ class _TextfieldEmailWidgetState extends State<TextfieldEmailWidget> {
           },
           decoration: InputDecoration(
             hintText: "Masukkan Email....",
-            hintStyle: TextStyle(color: widget.textColor.withOpacity(0.6)), // <-- hint
+            hintStyle: TextStyle(color: widget.textColor.withOpacity(0.6)), 
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
               borderSide: BorderSide(color: widget.textColor),

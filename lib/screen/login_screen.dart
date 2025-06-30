@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
-import 'package:sigopal/widget/textfield/textfield_pass_widget.dart'; // Assuming this widget exists
+import 'package:sigopal/widget/textfield/textfield_pass_widget.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -11,6 +11,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  // Controllers for text input fields
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final usernameController = TextEditingController();
@@ -18,10 +19,8 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Use addPostFrameCallback to ensure context is available after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      // Pre-fill controllers if rememberMe is true and credentials are loaded
       if (auth.rememberMe) {
         emailController.text = auth.enteredEmail;
         passwordController.text = auth.enteredPassword;
@@ -31,6 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    // Dispose all TextEditingControllers to prevent memory leaks
     emailController.dispose();
     passwordController.dispose();
     usernameController.dispose();
@@ -39,30 +39,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Listen to AuthProvider changes to update UI
+    // Watch AuthProvider for state changes (e.g., islogin, showTopError, rememberMe)
     final auth = Provider.of<AuthProvider>(context);
-
-    // Ensure controllers are updated when AuthProvider state changes (e.g., after loading)
-    // This is important to reflect the pre-filled values
-    if (auth.rememberMe && emailController.text.isEmpty && passwordController.text.isEmpty) {
-        emailController.text = auth.enteredEmail;
-        passwordController.text = auth.enteredPassword;
-    }
-
 
     return Scaffold(
       backgroundColor: const Color(0xFF62C3D0),
       body: Stack(
         children: [
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.3,
-              child: Image.asset(
-                'images/air.png',
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
@@ -70,20 +53,20 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Tombol kembali
+                    // Back button
                     Align(
                       alignment: Alignment.topLeft,
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () {
-                          // Optional: Clear credentials if the user goes back from login
-                          // auth.clearSavedCredentials();
+                          // Navigate back to the welcome screen
                           Navigator.pushReplacementNamed(context, '/welcome');
                         },
                       ),
                     ),
                     const SizedBox(height: 10),
 
+                    // Logo display, only shown in login mode
                     if (auth.islogin)
                       Column(
                         children: [
@@ -95,6 +78,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 20),
                         ],
                       ),
+
+                    // Top error message display
                     if (auth.showTopError)
                       Container(
                         width: MediaQuery.of(context).size.width * 0.7,
@@ -110,6 +95,8 @@ class _LoginScreenState extends State<LoginScreen> {
                           textAlign: TextAlign.center,
                         ),
                       ),
+
+                    // Login/Register Form Container
                     Container(
                       padding: const EdgeInsets.all(35),
                       width: MediaQuery.of(context).size.width * 0.8,
@@ -129,6 +116,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         key: auth.form,
                         child: Column(
                           children: [
+                            // Username field, only shown in register mode
                             if (!auth.islogin)
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                     decoration: InputDecoration(
                                       hintText: "Masukkan Nama....",
-                                      hintStyle: TextStyle(color: Color(0xE617778F).withOpacity(0.6)),
+                                      hintStyle: TextStyle(color: const Color(0xE617778F).withOpacity(0.6)),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(15),
                                         borderSide: const BorderSide(color: Color(0xE617778F)),
@@ -172,6 +160,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   const SizedBox(height: 15),
                                 ],
                               ),
+
+                            // Email field (present in both login and register)
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -203,7 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                   decoration: InputDecoration(
                                     hintText: "Masukkan Email...",
-                                    hintStyle: TextStyle(color: Color(0xE617778F).withOpacity(0.6)),
+                                    hintStyle: TextStyle(color: const Color(0xE617778F).withOpacity(0.6)),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(15),
                                       borderSide: const BorderSide(color: Color(0xE617778F)),
@@ -218,14 +208,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 15),
                               ],
                             ),
+
+                            // Custom TextfieldPasswordWidget for the password field
                             TextfieldPasswordWidget(
                               controller: passwordController,
-                              textColor: Color(0xE617778F),
+                              textColor: const Color(0xE617778F),
                               iconColor: const Color(0xFF62C3D0),
                             ),
-                            const SizedBox(height: 10), // Adjusted space
-                            // New: "Remember Me" Checkbox
-                            if (auth.islogin) // Only show this for login mode
+                            const SizedBox(height: 10),
+
+                            // "Remember Me" Checkbox, only shown for login mode
+                            if (auth.islogin)
                               Align(
                                 alignment: Alignment.centerLeft,
                                 child: Row(
@@ -244,24 +237,35 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ],
                                 ),
                               ),
-                            const SizedBox(height: 20), // Adjusted space
+                            const SizedBox(height: 20),
+
+                            // Login/Register Button
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
                                   FocusScope.of(context).unfocus();
-                                  // Make sure the provider's variables are up-to-date with controllers
+
+                                  // Update AuthProvider's variables with current controller values
                                   auth.enteredEmail = emailController.text.trim();
                                   auth.enteredPassword = passwordController.text.trim();
                                   if (!auth.islogin) {
                                     auth.enteredUsername = usernameController.text.trim();
                                   }
 
+                                  // Call submit (login) or register method based on current mode
                                   if (auth.islogin) {
                                     auth.submit(
-                                      onSuccess: () {
-                                        if (!context.mounted) return;
-                                        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+                                      onSuccess: () async {
+                                        // On successful login, check if node is already set
+                                        if (!context.mounted) return; 
+                                        final userNode = await auth.getUserNode();
+                                        if (!context.mounted) return; 
+                                        if (userNode == null || userNode.isEmpty) {
+                                          Navigator.pushNamedAndRemoveUntil(context, '/node_screen', (route) => false);
+                                        } else {
+                                          Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+                                        }
                                       },
                                       onError: (msg) {
                                         if (!context.mounted) return;
@@ -273,32 +277,52 @@ class _LoginScreenState extends State<LoginScreen> {
                                   } else {
                                     auth.register(
                                       onError: (msg) {
-                                        if (!context.mounted) return;
+                                        if (!context.mounted) return; 
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(content: Text(msg)),
                                         );
                                       },
+                                      onSuccess: () {
+                                        if (!context.mounted) return;
+                                        setState(() {
+                                          auth.islogin = true;
+                                          auth.clearTopError();
+                                          emailController.clear();
+                                          passwordController.clear();
+                                          usernameController.clear();
+                                        });
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Registrasi berhasil! Silakan aktivasi email Anda sebelum login.')),
+                                        );
+                                      }
                                     );
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF62C3D0),
                                   foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 12),
                                 ),
-                                child: Text(auth.islogin ? 'Masuk' : 'Daftar'),
+                                child: Text(
+                                  auth.islogin ? 'Masuk' : 'Daftar',
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                ),
                               ),
                             ),
                             const SizedBox(height: 5),
+
+                            // Toggle between Login and Register modes
                             TextButton(
                               onPressed: () {
                                 setState(() {
                                   auth.islogin = !auth.islogin;
                                   auth.clearTopError();
-                                  // Clear controllers when switching mode, to avoid carrying over values
                                   emailController.clear();
                                   passwordController.clear();
                                   usernameController.clear();
-                                  // Also reset rememberMe when switching from login to register
                                   if (!auth.islogin) {
                                     auth.setRememberMe(false);
                                   }
@@ -306,11 +330,13 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                               child: Text(
                                 auth.islogin ? 'Buat Akun' : 'Sudah Punya Akun',
-                                style: const TextStyle(color: Colors.black),
+                                style: const TextStyle(color: Colors.black, fontSize: 14),
                               ),
                             ),
                             const SizedBox(height: 10),
-                            if (!auth.islogin)
+
+                            // Resend Email Verification button, only shown in login mode
+                            if (auth.islogin)
                               TextButton(
                                 onPressed: () async {
                                   // Ensure controller values are passed to provider before resending

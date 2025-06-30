@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "819699009606",
+    "firebase_url": "https://sigopal-default-rtdb.asia-southeast1.firebasedatabase.app",
     "project_id": "sigopal",
     "storage_bucket": "sigopal.firebasestorage.app"
   },

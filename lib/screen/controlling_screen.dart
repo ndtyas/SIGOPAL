@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
 
 class ControllingScreen extends StatefulWidget {
   const ControllingScreen({super.key});
@@ -11,100 +12,291 @@ class ControllingScreen extends StatefulWidget {
 }
 
 class _ControllingScreenState extends State<ControllingScreen> {
-  bool valveOpen = false; // State for the valve (Open/Closed)
+  static const String _controlDataPath = 'control_data';
+  static const String _valveControlPath = 'valve_control';
+
+  // State variables
+  bool valveOpen = false;
+  bool _isLoading = true;
 
   // State variables to hold fetched data for info cards
   String _debitAirValue = 'N/A';
   String _teganganValue = 'N/A';
   String _arusValue = 'N/A';
 
+  // Firebase Realtime Database reference
+  late DatabaseReference _databaseRef;
+  StreamSubscription<DatabaseEvent>? _controlDataSubscription;
+  StreamSubscription<DatabaseEvent>? _valveControlSubscription;
+
   @override
   void initState() {
     super.initState();
-    _fetchControlData(); // Fetch initial data when the screen starts
+    _initializeFirebase();
   }
 
-  // --- API Integration Functions ---
-
-  // Function to fetch data for the info cards
-  Future<void> _fetchControlData() async {
-    try {
-      // Replace with your actual API endpoint to GET control data
-      // Example: 'https://your-backend.com/api/control_data'
-      final response = await http.get(Uri.parse('YOUR_API_ENDPOINT_FOR_CONTROL_DATA_GET'));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          // Assuming API returns JSON like: {"debit_air": 10.5, "tegangan": 220, "arus": 5.1, "valve_open": true}
-          _debitAirValue =
-              data['debit_air']?.toStringAsFixed(1) ?? 'N/A'; // Format to 1 decimal place
-          _teganganValue = data['tegangan']?.toString() ?? 'N/A';
-          _arusValue =
-              data['arus']?.toStringAsFixed(1) ?? 'N/A'; // Format to 1 decimal place
-          // Also update the valve state if it's part of the GET response
-          if (data.containsKey('valve_open')) {
-            valveOpen = data['valve_open'] as bool;
-          }
-        });
-      } else {
-        _showErrorDialog('Gagal memuat data. Kode status: ${response.statusCode}');
-      }
-    } catch (e) {
-      _showErrorDialog('Error mengambil data: $e');
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_isLoading) {
+      _fetchControlData();
+      _fetchValveControlData();
     }
   }
 
-  // Function to send valve state to the API
+  @override
+  void dispose() {
+    _controlDataSubscription?.cancel();
+    _valveControlSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Initialize Firebase Database reference using default instance
+  void _initializeFirebase() {
+    try {
+      // Use the default Firebase instance that's already configured
+      _databaseRef = FirebaseDatabase.instance.ref();
+      developer.log('Firebase initialized successfully using default instance',
+          name: 'ControllingScreen');
+    } catch (e) {
+      developer.log('Error initializing Firebase: $e', name: 'ControllingScreen');
+      // Tunda error dialog sampai context tersedia
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showErrorDialog('Gagal menginisialisasi Firebase: $e');
+        }
+      });
+    }
+  }
+
+  // Function to fetch control data (tegangan, arus) from Firebase
+  Future<void> _fetchControlData() async {
+    if (!mounted) return;
+    
+    try {
+      // Cancel existing subscription to prevent multiple listeners
+      _controlDataSubscription?.cancel();
+
+      // Listen to real-time updates from Firebase for control_data
+      _controlDataSubscription = _databaseRef.child(_controlDataPath).onValue.listen(
+        (event) {
+          if (mounted) {
+            if (event.snapshot.exists) {
+              final data = event.snapshot.value as Map<dynamic, dynamic>?;
+              if (data != null) {
+                setState(() {
+                  // Extract and format the control data (tegangan, arus)
+                  _teganganValue = _formatValue(data['tegangan'], 0);
+                  _arusValue = _formatValue(data['arus'], 1);
+                  _updateLoadingState();
+                });
+              } else {
+                _setDefaultControlValues();
+              }
+            } else {
+              _setDefaultControlValues();
+            }
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            developer.log('Error fetching control data: $error',
+                name: 'ControllingScreen');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showErrorDialog('Error mengambil data kontrol: $error');
+              }
+            });
+            _setDefaultControlValues();
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        developer.log('Error initializing control data fetch: $e',
+            name: 'ControllingScreen');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showErrorDialog('Error inisialisasi data kontrol: $e');
+          }
+        });
+        _setDefaultControlValues();
+      }
+    }
+  }
+
+  // Function to fetch valve control data (debit_air, valve_open) from Firebase
+  Future<void> _fetchValveControlData() async {
+    if (!mounted) return;
+    
+    try {
+      // Cancel existing subscription to prevent multiple listeners
+      _valveControlSubscription?.cancel();
+
+      // Listen to real-time valve control updates
+      _valveControlSubscription = _databaseRef.child(_valveControlPath).onValue.listen(
+        (event) {
+          if (mounted) {
+            if (event.snapshot.exists) {
+              final data = event.snapshot.value as Map<dynamic, dynamic>?;
+              if (data != null) {
+                setState(() {
+                  // Extract debit_air from valve_control
+                  _debitAirValue = _formatValue(data['debit_air'], 1);
+
+                  // Extract valve state
+                  if (data.containsKey('valve_open')) {
+                    valveOpen = data['valve_open'] as bool? ?? false;
+                  }
+
+                  _updateLoadingState();
+                });
+              } else {
+                _setDefaultValveValues();
+              }
+            } else {
+              _setDefaultValveValues();
+            }
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            developer.log('Error fetching valve data: $error',
+                name: 'ControllingScreen');
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _showErrorDialog('Error mengambil data kran: $error');
+              }
+            });
+            _setDefaultValveValues();
+          }
+        },
+      );
+    } catch (e) {
+      if (mounted) {
+        developer.log('Error initializing valve data fetch: $e',
+            name: 'ControllingScreen');
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showErrorDialog('Error inisialisasi data kran: $e');
+          }
+        });
+        _setDefaultValveValues();
+      }
+    }
+  }
+
+  // Helper function to format numeric values
+  String _formatValue(dynamic value, int decimalPlaces) {
+    if (value == null) return 'N/A';
+
+    try {
+      double numValue = double.parse(value.toString());
+      return numValue.toStringAsFixed(decimalPlaces);
+    } catch (e) {
+      return value.toString();
+    }
+  }
+
+  // Helper function to set default values for control data when no data is available
+  void _setDefaultControlValues() {
+    setState(() {
+      _teganganValue = 'N/A';
+      _arusValue = 'N/A';
+      _updateLoadingState();
+    });
+  }
+
+  // Helper function to set default values for valve data when no data is available
+  void _setDefaultValveValues() {
+    setState(() {
+      _debitAirValue = 'N/A';
+      _updateLoadingState();
+    });
+  }
+
+  // Helper function to update loading state
+  void _updateLoadingState() {
+    if (_teganganValue != 'N/A' ||
+        _arusValue != 'N/A' ||
+        _debitAirValue != 'N/A' ||
+        !_isLoading) {
+      _isLoading = false;
+    }
+  }
+
+  // Function to send valve state to Firebase
   Future<void> _sendValveState(bool isOpen) async {
     try {
-      // Replace with your actual API endpoint to POST/PUT valve state
-      // Example: 'https://your-backend.com/api/valve_control'
-      final response = await http.post(
-        Uri.parse('YOUR_API_ENDPOINT_FOR_VALVE_CONTROL_POST'),
-        headers: <String, String>{
-          'Content-Type': 'application/json; charset=UTF-8',
-        },
-        body: jsonEncode(<String, bool>{
-          'valve_open': isOpen, // Send the new state
-        }),
-      );
+      await _databaseRef.child(_valveControlPath).update({
+        'valve_open': isOpen,
+        'timestamp': ServerValue.timestamp,
+      });
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Kran berhasil ${isOpen ? "dibuka" : "ditutup"}')),
-          );
-        }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Gagal mengirim perintah: ${response.statusCode}')),
-          );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Kran berhasil ${isOpen ? "dibuka" : "ditutup"}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error jaringan: $e')),
+          SnackBar(
+            content: Text('Error mengontrol kran: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
         );
+        // Revert the state if Firebase update failed
+        setState(() {
+          valveOpen = !isOpen;
+        });
       }
     }
   }
 
+  // Toggle valve state
   void toggleValve() {
+    final newState = !valveOpen;
+    // Optimistic UI update
     setState(() {
-      valveOpen = !valveOpen;
+      valveOpen = newState;
     });
-    _sendValveState(valveOpen);
+    _sendValveState(newState);
   }
 
+  // Refresh data manually
+  void _refreshData() {
+    setState(() {
+      _isLoading = true;
+      _debitAirValue = 'N/A';
+      _teganganValue = 'N/A';
+      _arusValue = 'N/A';
+    });
+    _fetchControlData();
+    _fetchValveControlData();
+  }
+
+  // Logout function
   void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    if (context.mounted) {
-      Navigator.pushReplacementNamed(context, '/checkauth');
+    try {
+      await FirebaseAuth.instance.signOut();
+      if (context.mounted) {
+        Navigator.pushReplacementNamed(context, '/checkauth');
+      }
+    } catch (e) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showErrorDialog('Error saat logout: $e');
+        }
+      });
     }
   }
 
+  // Show error dialog
   void _showErrorDialog(String message) {
     if (!mounted) return;
     showDialog(
@@ -119,47 +311,63 @@ class _ControllingScreenState extends State<ControllingScreen> {
             },
             child: const Text('Oke'),
           ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              _refreshData();
+            },
+            child: const Text('Coba Lagi'),
+          ),
         ],
       ),
     );
   }
 
-  // This widget uses Expanded to be responsive within a Row
-  Widget buildInfoCard(IconData icon, String value, String label) {
-    return Expanded( // Ensures this card takes up equal available horizontal space
+  // Build info card widget with loading state
+  Widget _buildInfoCard(IconData icon, String value, String label) {
+    return Expanded(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8), // Keeps spacing between cards
+        margin: const EdgeInsets.symmetric(horizontal: 8),
         padding: const EdgeInsets.symmetric(vertical: 20),
         decoration: BoxDecoration(
-          color: const Color(0xF2FFFFFF), // 95% opacity white
+          color: const Color(0xF2FFFFFF),
           borderRadius: BorderRadius.circular(15),
-          boxShadow: [
+          boxShadow: const [
             BoxShadow(
-              color: const Color(0x26000000), // Approx 15% opacity black
+              color: Color(0x26000000),
               blurRadius: 10,
               spreadRadius: 2,
-              offset: const Offset(0, 5),
+              offset: Offset(0, 5),
             ),
           ],
         ),
         child: Column(
           children: [
-            Icon(icon, size: 30, color: const Color(0xFF17778F)), // Fixed icon size, generally fine
+            Icon(icon, size: 30, color: const Color(0xFF17778F)),
             const SizedBox(height: 10),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 26, // Fixed font size, scales well by default Flutter
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF17778F),
-              ),
-            ),
+            _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Color(0xFF17778F),
+                      strokeWidth: 2,
+                    ),
+                  )
+                : Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF17778F),
+                    ),
+                  ),
             const SizedBox(height: 6),
             Text(
               label,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 16, // Fixed font size
+                fontSize: 16,
                 color: Color(0xFF17778F),
               ),
             ),
@@ -172,143 +380,152 @@ class _ControllingScreenState extends State<ControllingScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height; // Get screen height
-    final double topPadding = screenHeight * 0.03; // Dynamic top padding
+    final screenHeight = MediaQuery.of(context).size.height;
+    final double topPadding = screenHeight * 0.03;
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF62C3D0),
-              Color(0xFF17778F),
-            ],
-          ),
-        ),
-        child: Stack(
+      backgroundColor: const Color(0xFF62C3D0),
+      body: SafeArea(
+        child: Column(
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.2,
-                child: Image.asset(
-                  'images/air.png',
-                  fit: BoxFit.cover, // Image covers the entire background
-                ),
-              ),
-            ),
-            SafeArea( // Ensures content is visible and not under system UI
-              child: Column( // Main Column to hold all content vertically
+            // Header with refresh and logout buttons
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, topPadding, 20, 40),
+              child: Row(
                 children: [
-                  // --- Header (fixed at top, not scrolling) ---
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(20, topPadding, 20, 40), // Adjusted padding
-                    child: Row(
-                      children: [
-                        const Text(
-                          "Pengontrolan",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const Spacer(), // Pushes logout button to the right
-                        IconButton(
-                          icon: const Icon(Icons.logout, color: Colors.white, size: 28),
-                          onPressed: () => _logout(context),
-                        ),
-                      ],
+                  const Text(
+                    "Pengontrolan",
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                  // --- Expanded Scrollable Content Area ---
-                  Expanded( // This Expanded widget makes the SingleChildScrollView take all remaining height
-                    child: SingleChildScrollView( // Allows content to scroll on smaller screens
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), // Adjusted padding
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // --- Info Cards ---
-                          Row(
-                            children: [
-                              buildInfoCard(Icons.water_drop, _debitAirValue, "Debit Air"),
-                              buildInfoCard(Icons.flash_on, _teganganValue, "Tegangan"),
-                              buildInfoCard(Icons.swap_vert, _arusValue, "Arus"),
-                            ],
+                  const Spacer(),
+                  // Refresh button
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white, size: 28),
+                    onPressed: _refreshData,
+                    tooltip: 'Refresh Data',
+                  ),
+                  // Logout button
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.white, size: 28),
+                    onPressed: () => _logout(context),
+                    tooltip: 'Logout',
+                  ),
+                ],
+              ),
+            ),
+            // Scrollable content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Info Cards
+                    Row(
+                      children: [
+                        _buildInfoCard(Icons.water_drop, _debitAirValue, "Debit Air\n(L/min)"),
+                        _buildInfoCard(Icons.flash_on, _teganganValue, "Tegangan\n(V)"),
+                        _buildInfoCard(Icons.swap_vert, _arusValue, "Arus\n(A)"),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                    // Valve Control Box
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xF2FFFFFF),
+                        borderRadius: BorderRadius.all(Radius.circular(20)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0x33000000),
+                            blurRadius: 12,
+                            spreadRadius: 3,
+                            offset: Offset(0, 6),
                           ),
-                          const SizedBox(height: 30),
-
-                          // --- Valve Control Box ---
-                          Container(
-                            width: double.infinity, // Takes full available width
-                            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                            decoration: BoxDecoration(
-                              color: const Color(0xF2FFFFFF), // 95% white
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0x33000000), // Approx 20% opacity black
-                                  blurRadius: 12,
-                                  spreadRadius: 3,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            "Ketuk Tombol Untuk\nBuka Tutup Kran",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 22,
+                              color: Color(0xFF17778F),
+                              fontWeight: FontWeight.bold,
                             ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min, // Column only takes space needed by children
-                              children: [
-                                const Text(
-                                  "Ketuk Tombol Untuk\nBuka Tutup Kran",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 22,
-                                    color: Color(0xFF17778F),
-                                    fontWeight: FontWeight.bold,
+                          ),
+                          const SizedBox(height: 25),
+                          // Status indicator
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: valveOpen ? Colors.red.shade100 : Colors.green.shade100,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
+                              style: TextStyle(
+                                color: valveOpen ? Colors.red.shade700 : Colors.green.shade700,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Control button
+                          GestureDetector(
+                            onTap: toggleValve,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 300),
+                              width: screenWidth * 0.45,
+                              height: screenWidth * 0.45,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: valveOpen ? Colors.red : const Color(0xFF17778F),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Color(0x4C000000),
+                                    blurRadius: 10,
+                                    offset: Offset(0, 6),
                                   ),
-                                ),
-                                const SizedBox(height: 25),
-                                GestureDetector(
-                                  onTap: toggleValve,
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 300),
-                                    width: screenWidth * 0.45, // Responsive size for the button
-                                    height: screenWidth * 0.45, // Make it a circle based on width
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: valveOpen ? Colors.red : const Color(0xFF17778F),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0x4C000000), // Approx 30% opacity black
-                                          blurRadius: 10,
-                                          offset: const Offset(0, 6),
-                                        ),
-                                      ],
+                                ],
+                              ),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      valveOpen ? Icons.close : Icons.power_settings_new,
+                                      color: Colors.white,
+                                      size: 40,
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        valveOpen ? "OFF" : "ON",
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 30,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      valveOpen ? "TUTUP" : "BUKA",
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 20), // Bottom spacing for the content
-                          // You can add a Spacer() here if you want to push content to the top
-                          // when there's extra space, or if the content is short.
-                          // Spacer(),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                  ],
+                ),
               ),
             ),
           ],

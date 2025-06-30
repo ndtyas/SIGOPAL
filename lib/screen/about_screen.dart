@@ -9,22 +9,10 @@ class AboutPage extends StatelessWidget {
       backgroundColor: const Color(0xFF62C3D0),
       body: Stack(
         children: [
-          // 🔵 Background image with opacity
-          Positioned.fill(
-            child: Opacity(
-              opacity: 0.3,
-              child: Image.asset(
-                'images/air.png',
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-
-          // 🔵 Main content
           SafeArea(
             child: Column(
               children: [
-                // 🔵 Header bar with back button and logos
+                // Header bar dengan tombol kembali dan logo
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   child: Row(
@@ -53,7 +41,7 @@ class AboutPage extends StatelessWidget {
                   ),
                 ),
 
-                // 🔵 Body content
+                // Konten utama
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
@@ -71,9 +59,10 @@ class AboutPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 20),
+                        // Kotak Definisi Aplikasi SIGOPAL
                         Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFF17778F),
+                            color: const Color(0xFF17778F), // Warna kotak definisi
                             borderRadius: BorderRadius.circular(12),
                           ),
                           padding: const EdgeInsets.all(16),
@@ -99,7 +88,33 @@ class AboutPage extends StatelessWidget {
                                 style: TextStyle(fontSize: 14, color: Colors.white),
                                 textAlign: TextAlign.justify,
                               ),
-                              SizedBox(height: 20),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20), // Jarak antara kotak dan gambar
+                        // Gambar tambahan
+                        Center(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              'images/jawaban.png', // Gambar baru Anda
+                              width: 200,
+                              height: 200,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20), // Jarak antara gambar dan kotak berikutnya
+                        // Kotak Fitur Aplikasi
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF17778F), // Warna kotak fitur
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: const [
                               Center(
                                 child: Text(
                                   "Fitur Aplikasi:",

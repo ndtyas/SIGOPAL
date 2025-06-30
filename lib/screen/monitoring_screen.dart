@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:firebase_database/firebase_database.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
 
 class MonitoringScreen extends StatefulWidget {
   const MonitoringScreen({super.key});
@@ -11,42 +12,99 @@ class MonitoringScreen extends StatefulWidget {
 }
 
 class _MonitoringScreenState extends State<MonitoringScreen> {
+  // Constants
+  static const String _waterQualityPath = 'water_quality';
+
   // State variables to hold the fetched data
   String _tdsValue = 'N/A';
   String _phValue = 'N/A';
+  bool _isLoading = true;
+
+  // Firebase Realtime Database reference
+  late DatabaseReference _databaseRef;
+  StreamSubscription<DatabaseEvent>? _dataSubscription;
 
   @override
   void initState() {
     super.initState();
-    _fetchWaterQualityData(); // Fetch data when the screen initializes
+    _initializeFirebase();
+    _fetchWaterQualityData();
   }
 
-  // Function to fetch data from your API
+  @override
+  void dispose() {
+    _dataSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Initialize Firebase Database reference menggunakan default instance
+  void _initializeFirebase() {
+    try {
+      // Menggunakan Firebase Database default instance yang sudah dikonfigurasi
+      _databaseRef = FirebaseDatabase.instance.ref();
+      developer.log('Firebase Database initialized successfully', name: 'MonitoringScreen');
+    } catch (e) {
+      developer.log('Error initializing Firebase: $e', name: 'MonitoringScreen');
+    }
+  }
+
+  // Real-time data fetching from Firebase Realtime Database
   Future<void> _fetchWaterQualityData() async {
     try {
-      // Replace with your actual API endpoint. This is a placeholder.
-      // Example: 'https://your-backend.com/api/water_data'
-      final response = await http.get(Uri.parse('YOUR_API_ENDPOINT_FOR_WATER_QUALITY_DATA'));
+      _dataSubscription?.cancel();
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          // Assuming your API returns a JSON like: {"tds": 150, "ph": 7.2}
-          _tdsValue = data['tds']?.toString() ?? 'N/A'; // Use null-safe access
-          _phValue = data['ph']?.toString() ?? 'N/A';      // Use null-safe access
-        });
-      } else {
-        // Handle non-200 responses, e.g., server errors
-        _showErrorDialog('Failed to load data. Status code: ${response.statusCode}');
-      }
+      _dataSubscription = _databaseRef.child(_waterQualityPath).onValue.listen(
+        (event) {
+          if (mounted) {
+            if (event.snapshot.exists) {
+              final data = event.snapshot.value as Map<dynamic, dynamic>?;
+              if (data != null) {
+                setState(() {
+                  _tdsValue = data['tds']?.toString() ?? 'N/A';
+                  _phValue = data['ph']?.toString() ?? 'N/A';
+                  _isLoading = false;
+                });
+                developer.log('Data updated - TDS: $_tdsValue, pH: $_phValue', name: 'MonitoringScreen');
+              } else {
+                setState(() {
+                  _tdsValue = 'N/A';
+                  _phValue = 'N/A';
+                  _isLoading = false;
+                });
+              }
+            } else {
+              setState(() {
+                _tdsValue = 'N/A';
+                _phValue = 'N/A';
+                _isLoading = false;
+              });
+              developer.log('No data exists at path: $_waterQualityPath', name: 'MonitoringScreen');
+            }
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            developer.log('Error fetching data: $error', name: 'MonitoringScreen');
+            _showErrorDialog('Error fetching data: $error');
+            setState(() {
+              _isLoading = false;
+            });
+          }
+        },
+      );
     } catch (e) {
-      // Handle network errors (no internet, host unreachable, etc.) or parsing errors
-      _showErrorDialog('Error fetching data: $e');
+      if (mounted) {
+        developer.log('Error initializing data fetch: $e', name: 'MonitoringScreen');
+        _showErrorDialog('Error initializing data fetch: $e');
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   void _showErrorDialog(String message) {
-    if (!mounted) return; // Ensure the widget is still mounted before showing dialog
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -65,15 +123,24 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   }
 
   void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
-    if (context.mounted) {
-      // Ensure the navigation happens after the widget is mounted
-      Navigator.pushReplacementNamed(context, '/checkauth');
+    try {
+      await FirebaseAuth.instance.signOut();
+      if (context.mounted) {
+        Navigator.pushReplacementNamed(context, '/checkauth');
+      }
+    } catch (e) {
+      _showErrorDialog('Error during logout: $e');
     }
   }
 
-  // Widget to display data in a box, already responsive with GridView
-  Widget dataBox(String imagePath, String value, String title) {
+  void _refreshData() {
+    setState(() {
+      _isLoading = true;
+    });
+    _fetchWaterQualityData();
+  }
+
+  Widget _dataBox(String imagePath, String value, String title) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -81,7 +148,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.26),
             blurRadius: 12,
             spreadRadius: 3,
             offset: const Offset(0, 6),
@@ -96,16 +163,33 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
             width: 50,
             height: 50,
             fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                Icons.image_not_supported,
+                size: 50,
+                color: Colors.white.withValues(alpha: 0.7),
+              );
+            },
           ),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
-          ),
+          // Tampilkan loading jika nilai adalah "N/A", atau loading state aktif
+          (_isLoading || value == 'N/A')
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
           const SizedBox(height: 2),
           Text(
             title,
@@ -121,8 +205,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     );
   }
 
-  // Widget to display SNI information, with added units
-  Widget sniBox() {
+  Widget _sniBox() {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 12),
       padding: const EdgeInsets.all(16),
@@ -131,7 +214,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.2),
+            color: Colors.black.withValues(alpha: 0.26),
             blurRadius: 12,
             spreadRadius: 3,
             offset: const Offset(0, 6),
@@ -146,13 +229,20 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
             width: 60,
             height: 60,
             fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) {
+              return Icon(
+                Icons.verified,
+                size: 60,
+                color: Colors.white.withValues(alpha: 0.7),
+              );
+            },
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
+              children: const [
+                Text(
                   "Standar SNI",
                   style: TextStyle(
                     fontSize: 20,
@@ -160,13 +250,15 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                     color: Colors.white,
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Row(
-                  children: const [
+                  children: [
                     SizedBox(
                       width: 50,
-                      child: Text("TDS",
-                          style: TextStyle(fontSize: 17, color: Colors.white)),
+                      child: Text(
+                        "TDS",
+                        style: TextStyle(fontSize: 17, color: Colors.white),
+                      ),
                     ),
                     Text(
                       ": 1000 mg/L",
@@ -174,13 +266,15 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 4),
                 Row(
-                  children: const [
+                  children: [
                     SizedBox(
                       width: 50,
-                      child: Text("pH",
-                          style: TextStyle(fontSize: 17, color: Colors.white)),
+                      child: Text(
+                        "pH",
+                        style: TextStyle(fontSize: 17, color: Colors.white),
+                      ),
                     ),
                     Text(
                       ": 6 - 9 pH",
@@ -203,123 +297,94 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     final double topPadding = screenHeight * 0.03;
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF62C3D0),
-              Color(0xFF17778F),
-            ],
-          ),
-        ),
-        child: Stack(
+      backgroundColor: const Color(0xFF62C3D0),
+      body: SafeArea(
+        child: Column(
           children: [
-            Positioned.fill(
-              child: Opacity(
-                opacity: 0.2,
-                child: Image.asset(
-                  'images/air.png',
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
-            SafeArea( // Ensures content is not obscured by system UI
-              child: Column( // Main column to hold all content vertically
+            Padding(
+              padding: EdgeInsets.fromLTRB(20, topPadding, 20, 30),
+              child: Row(
                 children: [
-                  // --- Header (fixed at top, not scrolling) ---
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(20, topPadding, 20, 30), // Consistent padding
-                    child: Row(
-                      children: [
-                        const Text(
-                          "Pemantauan",
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const Spacer(), // Pushes logout button to the right
-                        IconButton(
-                          icon: const Icon(Icons.logout, color: Colors.white, size: 28),
-                          onPressed: () => _logout(context),
-                        ),
-                      ],
+                  const Text(
+                    "Pemantauan",
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                  // --- Expanded Scrollable Content Area ---
-                  Expanded( // This Expanded widget makes the SingleChildScrollView take all remaining height
-                    child: SingleChildScrollView( // Allows content to scroll if needed
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20), // Adjust padding for scrollable area
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          // --- Data Monitoring Grid ---
-                          GridView.count(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 16,
-                            mainAxisSpacing: 16,
-                            childAspectRatio: 1.0,
-                            children: [
-                              dataBox("images/tds.png", _tdsValue, "Kadar TDS"),
-                              dataBox("images/ph.png", _phValue, "Kadar pH"),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white, size: 28),
+                    onPressed: _refreshData,
+                    tooltip: 'Refresh Data',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.logout, color: Colors.white, size: 28),
+                    onPressed: () => _logout(context),
+                    tooltip: 'Logout',
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 16,
+                      mainAxisSpacing: 16,
+                      childAspectRatio: 1.0,
+                      children: [
+                        _dataBox("images/tds.png", _tdsValue, "Kadar TDS"),
+                        _dataBox("images/ph.png", _phValue, "Kadar pH"),
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    _sniBox(),
+                    const SizedBox(height: 15),
+                    Center(
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.pushNamed(context, '/volume');
+                        },
+                        child: Container(
+                          width: screenWidth * 0.5,
+                          height: screenWidth * 0.5,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 15,
+                                spreadRadius: 3,
+                                offset: const Offset(0, 8),
+                              ),
                             ],
                           ),
-                          const SizedBox(height: 15),
-
-                          // --- SNI Box ---
-                          sniBox(),
-
-                          const SizedBox(height: 15),
-
-                          // --- Circular "Cek Volume Air" Button ---
-                          Center(
-                            child: GestureDetector(
-                              onTap: () {
-                                Navigator.pushNamed(context, '/volume');
-                              },
-                              child: Container(
-                                width: screenWidth * 0.5,
-                                height: screenWidth * 0.5,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Colors.white,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.3),
-                                      blurRadius: 15,
-                                      spreadRadius: 3,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: const Center(
-                                  child: Text(
-                                    "Cek\nVolume Air",
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      color: Color(0xE617778F),
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
+                          child: const Center(
+                            child: Text(
+                              "Cek\nVolume Air",
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Color(0xE617778F),
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 15),
-                          // You can add a Spacer here if you want the content to be pushed
-                          // to the top and fill remaining space (if any) before scrolling.
-                          // Spacer(),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 15),
+                  ],
+                ),
               ),
             ),
           ],
