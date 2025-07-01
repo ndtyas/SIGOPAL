@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart';
 
 class ControllingScreen extends StatefulWidget {
   const ControllingScreen({super.key});
@@ -12,22 +13,19 @@ class ControllingScreen extends StatefulWidget {
 }
 
 class _ControllingScreenState extends State<ControllingScreen> {
-  static const String _controlDataPath = 'control_data';
-  static const String _valveControlPath = 'valve_control';
+  static const String _lastDataPath = 'last_data';
 
-  // State variables
   bool valveOpen = false;
   bool _isLoading = true;
 
-  // State variables to hold fetched data for info cards
-  String _debitAirValue = 'N/A';
-  String _teganganValue = 'N/A';
-  String _arusValue = 'N/A';
+  String _debitAirValue = '...';
+  String _teganganValue = '...';
+  String _arusValue = '...';
 
-  // Firebase Realtime Database reference
   late DatabaseReference _databaseRef;
-  StreamSubscription<DatabaseEvent>? _controlDataSubscription;
-  StreamSubscription<DatabaseEvent>? _valveControlSubscription;
+  StreamSubscription<DatabaseEvent>? _dataSubscription;
+
+  String? _activeNode;
 
   @override
   void initState() {
@@ -38,29 +36,40 @@ class _ControllingScreenState extends State<ControllingScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_isLoading) {
-      _fetchControlData();
-      _fetchValveControlData();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final newNode = auth.getCurrentNode();
+
+    if (newNode != _activeNode) {
+      _activeNode = newNode;
+      if (_activeNode != null) {
+        _fetchControlData();
+      } else {
+        setState(() {
+          valveOpen = false;
+          _isLoading = false;
+          // Set to default loading indicators when no node is selected
+          _debitAirValue = '...';
+          _teganganValue = '...';
+          _arusValue = '...';
+        });
+        _showErrorDialog('Node belum dipilih atau tidak valid.');
+      }
     }
   }
 
   @override
   void dispose() {
-    _controlDataSubscription?.cancel();
-    _valveControlSubscription?.cancel();
+    _dataSubscription?.cancel();
     super.dispose();
   }
 
-  // Initialize Firebase Database reference using default instance
   void _initializeFirebase() {
     try {
-      // Use the default Firebase instance that's already configured
       _databaseRef = FirebaseDatabase.instance.ref();
       developer.log('Firebase initialized successfully using default instance',
-          name: 'ControllingScreen');
+          name: 'SupervisionScreen');
     } catch (e) {
-      developer.log('Error initializing Firebase: $e', name: 'ControllingScreen');
-      // Tunda error dialog sampai context tersedia
+      developer.log('Error initializing Firebase: $e', name: 'SupervisionScreen');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _showErrorDialog('Gagal menginisialisasi Firebase: $e');
@@ -69,221 +78,99 @@ class _ControllingScreenState extends State<ControllingScreen> {
     }
   }
 
-  // Function to fetch control data (tegangan, arus) from Firebase
   Future<void> _fetchControlData() async {
-    if (!mounted) return;
-    
-    try {
-      // Cancel existing subscription to prevent multiple listeners
-      _controlDataSubscription?.cancel();
+    if (!mounted || _activeNode == null) return;
 
-      // Listen to real-time updates from Firebase for control_data
-      _controlDataSubscription = _databaseRef.child(_controlDataPath).onValue.listen(
+    setState(() {
+      _isLoading = true;
+      _debitAirValue = '...'; // Set to loading indicator
+      _teganganValue = '...'; // Set to loading indicator
+      _arusValue = '...'; // Set to loading indicator
+    });
+
+    try {
+      _dataSubscription?.cancel();
+
+      final nodeDataPath = '$_lastDataPath/$_activeNode';
+      developer.log('Fetching control data from: $nodeDataPath', name: 'SupervisionScreen');
+
+      _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
           if (mounted) {
-            if (event.snapshot.exists) {
+            if (event.snapshot.exists && event.snapshot.value != null) {
               final data = event.snapshot.value as Map<dynamic, dynamic>?;
               if (data != null) {
                 setState(() {
-                  // Extract and format the control data (tegangan, arus)
                   _teganganValue = _formatValue(data['tegangan'], 0);
                   _arusValue = _formatValue(data['arus'], 1);
-                  _updateLoadingState();
+                  _debitAirValue = _formatValue(data['debit_air'], 1);
+                  valveOpen = data['valve_open'] as bool? ?? false;
+                  _isLoading = false;
                 });
               } else {
-                _setDefaultControlValues();
+                _setDefaultValuesToLoading(); // Set to loading indicators if data is null but snapshot exists
               }
             } else {
-              _setDefaultControlValues();
+              _setDefaultValuesToLoading(); // Set to loading indicators if snapshot does not exist
             }
           }
         },
         onError: (error) {
           if (mounted) {
             developer.log('Error fetching control data: $error',
-                name: 'ControllingScreen');
+                name: 'SupervisionScreen');
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _showErrorDialog('Error mengambil data kontrol: $error');
+                _showErrorDialog('Error mengambil data pengawasan: $error');
               }
             });
-            _setDefaultControlValues();
+            _setDefaultValuesToLoading(); // Set to loading indicators on error
           }
         },
       );
     } catch (e) {
       if (mounted) {
-        developer.log('Error initializing control data fetch: $e',
-            name: 'ControllingScreen');
+        developer.log('Error initiating control data fetch: $e',
+            name: 'SupervisionScreen');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _showErrorDialog('Error inisialisasi data kontrol: $e');
+            _showErrorDialog('Error inisialisasi data pengawasan: $e');
           }
         });
-        _setDefaultControlValues();
+        _setDefaultValuesToLoading(); // Set to loading indicators on exception
       }
     }
   }
 
-  // Function to fetch valve control data (debit_air, valve_open) from Firebase
-  Future<void> _fetchValveControlData() async {
-    if (!mounted) return;
-    
-    try {
-      // Cancel existing subscription to prevent multiple listeners
-      _valveControlSubscription?.cancel();
-
-      // Listen to real-time valve control updates
-      _valveControlSubscription = _databaseRef.child(_valveControlPath).onValue.listen(
-        (event) {
-          if (mounted) {
-            if (event.snapshot.exists) {
-              final data = event.snapshot.value as Map<dynamic, dynamic>?;
-              if (data != null) {
-                setState(() {
-                  // Extract debit_air from valve_control
-                  _debitAirValue = _formatValue(data['debit_air'], 1);
-
-                  // Extract valve state
-                  if (data.containsKey('valve_open')) {
-                    valveOpen = data['valve_open'] as bool? ?? false;
-                  }
-
-                  _updateLoadingState();
-                });
-              } else {
-                _setDefaultValveValues();
-              }
-            } else {
-              _setDefaultValveValues();
-            }
-          }
-        },
-        onError: (error) {
-          if (mounted) {
-            developer.log('Error fetching valve data: $error',
-                name: 'ControllingScreen');
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _showErrorDialog('Error mengambil data kran: $error');
-              }
-            });
-            _setDefaultValveValues();
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        developer.log('Error initializing valve data fetch: $e',
-            name: 'ControllingScreen');
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            _showErrorDialog('Error inisialisasi data kran: $e');
-          }
-        });
-        _setDefaultValveValues();
-      }
-    }
-  }
-
-  // Helper function to format numeric values
   String _formatValue(dynamic value, int decimalPlaces) {
-    if (value == null) return 'N/A';
+    if (value == null) return '...'; // Return loading indicator for null values
 
     try {
       double numValue = double.parse(value.toString());
       return numValue.toStringAsFixed(decimalPlaces);
     } catch (e) {
-      return value.toString();
+      return '...'; // Return loading indicator if parsing fails
     }
   }
 
-  // Helper function to set default values for control data when no data is available
-  void _setDefaultControlValues() {
+  void _setDefaultValuesToLoading() {
     setState(() {
-      _teganganValue = 'N/A';
-      _arusValue = 'N/A';
-      _updateLoadingState();
+      _teganganValue = '...';
+      _arusValue = '...';
+      _debitAirValue = '...';
+      valveOpen = false; // Valve status might default to closed or unknown
+      _isLoading = true; // Still loading if data is not available
     });
   }
 
-  // Helper function to set default values for valve data when no data is available
-  void _setDefaultValveValues() {
-    setState(() {
-      _debitAirValue = 'N/A';
-      _updateLoadingState();
-    });
-  }
-
-  // Helper function to update loading state
-  void _updateLoadingState() {
-    if (_teganganValue != 'N/A' ||
-        _arusValue != 'N/A' ||
-        _debitAirValue != 'N/A' ||
-        !_isLoading) {
-      _isLoading = false;
-    }
-  }
-
-  // Function to send valve state to Firebase
-  Future<void> _sendValveState(bool isOpen) async {
-    try {
-      await _databaseRef.child(_valveControlPath).update({
-        'valve_open': isOpen,
-        'timestamp': ServerValue.timestamp,
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Kran berhasil ${isOpen ? "dibuka" : "ditutup"}'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error mengontrol kran: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        // Revert the state if Firebase update failed
-        setState(() {
-          valveOpen = !isOpen;
-        });
-      }
-    }
-  }
-
-  // Toggle valve state
-  void toggleValve() {
-    final newState = !valveOpen;
-    // Optimistic UI update
-    setState(() {
-      valveOpen = newState;
-    });
-    _sendValveState(newState);
-  }
-
-  // Refresh data manually
   void _refreshData() {
-    setState(() {
-      _isLoading = true;
-      _debitAirValue = 'N/A';
-      _teganganValue = 'N/A';
-      _arusValue = 'N/A';
-    });
     _fetchControlData();
-    _fetchValveControlData();
   }
 
-  // Logout function
   void _logout(BuildContext context) async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      await FirebaseAuth.instance.signOut();
+      await auth.signOut();
       if (context.mounted) {
         Navigator.pushReplacementNamed(context, '/checkauth');
       }
@@ -296,7 +183,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
     }
   }
 
-  // Show error dialog
   void _showErrorDialog(String message) {
     if (!mounted) return;
     showDialog(
@@ -323,7 +209,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
     );
   }
 
-  // Build info card widget with loading state
   Widget _buildInfoCard(IconData icon, String value, String label) {
     return Expanded(
       child: Container(
@@ -345,7 +230,8 @@ class _ControllingScreenState extends State<ControllingScreen> {
           children: [
             Icon(icon, size: 30, color: const Color(0xFF17778F)),
             const SizedBox(height: 10),
-            _isLoading
+            // Display CircularProgressIndicator if value is '...' (our loading indicator)
+            value == '...'
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -388,13 +274,12 @@ class _ControllingScreenState extends State<ControllingScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header with refresh and logout buttons
             Padding(
               padding: EdgeInsets.fromLTRB(20, topPadding, 20, 40),
               child: Row(
                 children: [
                   const Text(
-                    "Pengontrolan",
+                    "Pengawasan",
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
@@ -402,13 +287,11 @@ class _ControllingScreenState extends State<ControllingScreen> {
                     ),
                   ),
                   const Spacer(),
-                  // Refresh button
                   IconButton(
                     icon: const Icon(Icons.refresh, color: Colors.white, size: 28),
                     onPressed: _refreshData,
                     tooltip: 'Refresh Data',
                   ),
-                  // Logout button
                   IconButton(
                     icon: const Icon(Icons.logout, color: Colors.white, size: 28),
                     onPressed: () => _logout(context),
@@ -417,14 +300,12 @@ class _ControllingScreenState extends State<ControllingScreen> {
                 ],
               ),
             ),
-            // Scrollable content
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Info Cards
                     Row(
                       children: [
                         _buildInfoCard(Icons.water_drop, _debitAirValue, "Debit Air\n(L/min)"),
@@ -433,7 +314,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
                       ],
                     ),
                     const SizedBox(height: 30),
-                    // Valve Control Box
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
@@ -453,7 +333,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            "Ketuk Tombol Untuk\nBuka Tutup Kran",
+                            "Pantau Status Meteran Air",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 22,
@@ -462,7 +342,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
                             ),
                           ),
                           const SizedBox(height: 25),
-                          // Status indicator
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
@@ -470,7 +349,10 @@ class _ControllingScreenState extends State<ControllingScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
+                              // Display '...' if still loading or no data, otherwise display status
+                              _isLoading && _debitAirValue == '...'
+                                  ? 'Memuat...'
+                                  : 'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
                               style: TextStyle(
                                 color: valveOpen ? Colors.red.shade700 : Colors.green.shade700,
                                 fontWeight: FontWeight.bold,
@@ -479,44 +361,52 @@ class _ControllingScreenState extends State<ControllingScreen> {
                             ),
                           ),
                           const SizedBox(height: 20),
-                          // Control button
-                          GestureDetector(
-                            onTap: toggleValve,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              width: screenWidth * 0.45,
-                              height: screenWidth * 0.45,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: valveOpen ? Colors.red : const Color(0xFF17778F),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Color(0x4C000000),
-                                    blurRadius: 10,
-                                    offset: Offset(0, 6),
+                          Container(
+                            width: screenWidth * 0.45,
+                            height: screenWidth * 0.45,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: valveOpen ? Colors.red : const Color(0xFF17778F),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x4C000000),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // Show CircularProgressIndicator for the main status if loading
+                                  _isLoading && _debitAirValue == '...'
+                                      ? const SizedBox(
+                                          width: 40,
+                                          height: 40,
+                                          child: CircularProgressIndicator(
+                                            color: Colors.white,
+                                            strokeWidth: 3,
+                                          ),
+                                        )
+                                      : Icon(
+                                          valveOpen ? Icons.water_drop_outlined : Icons.cancel_outlined,
+                                          color: Colors.white,
+                                          size: 40,
+                                        ),
+                                  const SizedBox(height: 8),
+                                  // Show 'Memuat...' for the main status text if loading
+                                  Text(
+                                    _isLoading && _debitAirValue == '...'
+                                        ? "Memuat..."
+                                        : (valveOpen ? "TERBUKA" : "TERTUTUP"),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 24,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ],
-                              ),
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      valveOpen ? Icons.close : Icons.power_settings_new,
-                                      color: Colors.white,
-                                      size: 40,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      valveOpen ? "TUTUP" : "BUKA",
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
                               ),
                             ),
                           ),

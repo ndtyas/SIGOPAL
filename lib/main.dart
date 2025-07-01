@@ -7,26 +7,25 @@ import 'firebase_options.dart';
 import 'provider/auth_provider.dart' as local_auth;
 import 'provider/imagepick_provider.dart';
 
-// Import all your application screens
 import 'screen/welcome.dart';
 import 'screen/about_screen.dart';
 import 'screen/login_screen.dart';
-import 'screen/home_page.dart'; 
+import 'screen/home_page.dart';
 import 'screen/volume_page.dart';
-import 'screen/monitoring_screen.dart'; 
+import 'screen/monitoring_screen.dart';
 import 'screen/controlling_screen.dart';
 import 'screen/billing_screen.dart';
-import 'screen/node_screen.dart'; // Import the new node screen
+import 'screen/node_screen.dart';
 
 void main() async {
   // Ensure Flutter widgets are initialized before Firebase.
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize Firebase with platform-specific options.
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
+
   runApp(const MyApp());
 }
 
@@ -57,14 +56,14 @@ class MyApp extends StatelessWidget {
         routes: {
           '/welcome': (context) => const WelcomeScreen(),
           '/about': (context) => const AboutPage(),
-          '/checkauth': (context) => const AuthWrapper(), // Checks authentication status
+          '/checkauth': (context) => const AuthWrapper(),
           '/login': (context) => const LoginScreen(),
-          '/home': (context) => const HomePage(), // The main screen after successful login
+          '/home': (context) => const HomePage(),
           '/volume': (context) => const VolumePage(),
-          '/monitoring': (context) => const MonitoringScreen(), // Route for MonitoringScreen
-          '/controlling': (context) => const ControllingScreen(), // Route for ControllingScreen
-          '/billing': (context) => const BillingScreen(), // Route for BillingScreen
-          '/node_screen': (context) => const NodeScreen(), // Route for the new NodeScreen
+          '/monitoring': (context) => const MonitoringScreen(),
+          '/controlling': (context) => const ControllingScreen(), // Keeping '/controlling' route name for consistency
+          '/billing': (context) => const BillingScreen(),
+          '/node_screen': (context) => const NodeScreen(),
         },
       ),
     );
@@ -89,21 +88,7 @@ class AuthWrapper extends StatelessWidget {
 
         // If user is logged in and their email is verified
         if (snapshot.hasData && snapshot.data!.emailVerified) {
-          // Check if the user has a node assigned
-          return FutureBuilder<String?>(
-            future: Provider.of<local_auth.AuthProvider>(context, listen: false).getUserNode(),
-            builder: (context, nodeSnapshot) {
-              if (nodeSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (nodeSnapshot.data == null || nodeSnapshot.data!.isEmpty) {
-                return const NodeScreen(); // Navigate to NodeScreen if no node
-              }
-              return const HomePage(); // Otherwise, navigate to HomePage
-            },
-          );
+          return const NodeScreen();
         }
 
         // Otherwise, if no user is logged in or email is not verified, show the LoginScreen

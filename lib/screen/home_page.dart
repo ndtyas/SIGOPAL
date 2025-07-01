@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'monitoring_screen.dart';
-import 'controlling_screen.dart';
+import 'controlling_screen.dart'; // Still importing controlling_screen as the file name is not changed
 import 'billing_screen.dart';
 
 class HomePage extends StatefulWidget {
@@ -15,7 +15,7 @@ class _HomePageState extends State<HomePage> {
 
   final List<Widget> _pages = const [
     MonitoringScreen(),
-    ControllingScreen(),
+    ControllingScreen(), // Still using ControllingScreen as the widget
     BillingScreen(),
   ];
 
@@ -39,7 +39,7 @@ class _HomePageState extends State<HomePage> {
         backgroundColor: const Color.fromARGB(255, 11, 58, 70),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.monitor), label: "Pemantauan"),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_remote), label: "Pengontrolan"),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_remote), label: "Pengawasan"), // Changed 'Pengontrolan' to 'Pengawasan'
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: "Tagihan"),
         ],
         onTap: _onItemTapped,

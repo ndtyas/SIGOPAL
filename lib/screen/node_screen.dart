@@ -17,14 +17,6 @@ class _NodeScreenState extends State<NodeScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill if a node was already saved (e.g., from a previous session)
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      final userNode = await auth.getUserNode();
-      if (userNode != null && userNode.isNotEmpty) {
-        nodeController.text = userNode;
-      }
-    });
   }
 
   @override
@@ -33,26 +25,24 @@ class _NodeScreenState extends State<NodeScreen> {
     super.dispose();
   }
 
-  void _saveNode() async {
-    FocusScope.of(context).unfocus(); 
+  void _verifyAndNavigateToHome() async {
+    FocusScope.of(context).unfocus();
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    // Validate the form first
     if (!_formKey.currentState!.validate()) {
       auth.setTopError('Harap masukkan node yang valid.');
       return;
     }
 
-    // Save the form, which triggers the onSaved in TextfieldNodeWidget
     _formKey.currentState!.save();
-    auth.clearTopError(); 
+    auth.clearTopError();
 
-    await auth.saveUserNode(
+    await auth.verifyNodeExistInRealtimeDb(
       node: nodeController.text.trim(),
       onSuccess: () {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Node berhasil disimpan!')),
+          const SnackBar(content: Text('Node berhasil diverifikasi!')),
         );
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       },
@@ -78,7 +68,6 @@ class _NodeScreenState extends State<NodeScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo or Title
                 Image.asset(
                   'images/logoPutih.png',
                   width: 150,
@@ -138,7 +127,7 @@ class _NodeScreenState extends State<NodeScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _saveNode,
+                            onPressed: _verifyAndNavigateToHome,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF62C3D0),
                               foregroundColor: Colors.white,
@@ -148,7 +137,7 @@ class _NodeScreenState extends State<NodeScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
                             child: const Text(
-                              'Simpan Node',
+                              'Masuk',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                           ),
@@ -156,7 +145,6 @@ class _NodeScreenState extends State<NodeScreen> {
                         const SizedBox(height: 10),
                         TextButton(
                           onPressed: () {
-                            // Option to sign out if they don't want to enter a node now
                             auth.signOut();
                             Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
                           },

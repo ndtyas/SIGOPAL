@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart'; 
 
 class VolumePage extends StatefulWidget {
   const VolumePage({super.key});
@@ -11,19 +13,18 @@ class VolumePage extends StatefulWidget {
 }
 
 class _VolumePageState extends State<VolumePage> {
-  // Constants
-  static const String _waterLevelPath = 'water_level';
+  static const String _lastDataPath = 'last_data';
 
-  // State variables to hold the fetched water level value
   double _currentWaterLevel = -1.0;
   String _waterLevelCategory = 'UNKNOWN';
   Color _statusColor = Colors.grey;
   bool _isLoading = true;
-  bool _hasData = false; // Track if we have received any data
+  bool _hasData = false;
 
-  // Firebase Realtime Database reference
   late DatabaseReference _databaseRef;
   StreamSubscription<DatabaseEvent>? _dataSubscription;
+
+  String? _activeNode;
 
   @override
   void initState() {
@@ -34,26 +35,47 @@ class _VolumePageState extends State<VolumePage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Pindahkan fetch data ke sini setelah context tersedia
-    if (_isLoading) {
-      _fetchWaterLevel();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    // Mendapatkan node terbaru dari AuthProvider
+    final newNode = auth.getCurrentNode();
+
+    // Log untuk debugging: melihat nilai newNode dan _activeNode saat ini
+    developer.log('didChangeDependencies: newNode retrieved from AuthProvider: $newNode, current _activeNode state: $_activeNode', name: 'VolumePage');
+
+    // Jika node berubah, perbarui _activeNode dan ambil data
+    if (newNode != _activeNode) {
+      _activeNode = newNode;
+      if (_activeNode != null) {
+        _fetchWaterLevel();
+      } else {
+        // Jika node null atau tidak valid, reset status dan tampilkan dialog
+        setState(() {
+          _currentWaterLevel = -1.0;
+          _waterLevelCategory = 'UNKNOWN';
+          _statusColor = Colors.grey;
+          _isLoading = false;
+          _hasData = false;
+        });
+        _showErrorDialog('Node belum dipilih atau tidak valid.');
+      }
     }
   }
 
   @override
   void dispose() {
+    // Batalkan langganan stream saat widget di-dispose untuk menghindari memory leaks
     _dataSubscription?.cancel();
     super.dispose();
   }
 
-  // Initialize Firebase Database reference menggunakan default instance
   void _initializeFirebase() {
     try {
+      // Inisialisasi Firebase Database reference
       _databaseRef = FirebaseDatabase.instance.ref();
       developer.log('Firebase Database initialized successfully', name: 'VolumePage');
     } catch (e) {
       developer.log('Error initializing Firebase: $e', name: 'VolumePage');
-      // Tunda error dialog sampai context tersedia
+      // Tampilkan dialog error jika inisialisasi Firebase gagal
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _showErrorDialog('Gagal menginisialisasi Firebase: $e');
@@ -62,10 +84,14 @@ class _VolumePageState extends State<VolumePage> {
     }
   }
 
-  // Real-time data fetching from Firebase Realtime Database
   Future<void> _fetchWaterLevel() async {
-    if (!mounted) return;
-    
+    // Pastikan widget masih mounted dan _activeNode tidak null sebelum melanjutkan
+    if (!mounted || _activeNode == null) {
+      developer.log('Skipping _fetchWaterLevel call: mounted=$mounted, _activeNode=$_activeNode. Data will not be fetched.', name: 'VolumePage');
+      return;
+    }
+
+    // Set status loading di awal pengambilan data
     setState(() {
       _isLoading = true;
       _hasData = false;
@@ -75,48 +101,50 @@ class _VolumePageState extends State<VolumePage> {
     });
 
     try {
+      // Batalkan langganan sebelumnya jika ada
       _dataSubscription?.cancel();
 
-      // Listen to real-time updates from Firebase
-      _dataSubscription = _databaseRef.child(_waterLevelPath).onValue.listen(
+      // Membangun jalur ke data di Firebase Realtime Database
+      // Contoh: 'last_data/NodeSensor'
+      final nodeDataPath = '$_lastDataPath/$_activeNode';
+      developer.log('Attempting to fetch data from Firebase path: $nodeDataPath', name: 'VolumePage');
+
+      // Mendengarkan perubahan data secara real-time
+      _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
-          if (mounted) {
-            if (event.snapshot.exists) {
-              final data = event.snapshot.value;
-              developer.log('Received data: $data', name: 'VolumePage');
+          if (mounted) { // Pastikan widget masih aktif
+            if (event.snapshot.exists && event.snapshot.value != null) {
+              final data = event.snapshot.value as Map<dynamic, dynamic>?;
+              developer.log('Successfully received data for path $nodeDataPath: $data', name: 'VolumePage');
 
               double? level;
-
-              // Handle different data structures for 'water_level'
-              if (data is Map<dynamic, dynamic>) {
-                if (data['level_cm'] != null) {
-                  level = (data['level_cm'] as num).toDouble();
-                } else if (data['value'] != null) {
-                  level = (data['value'] as num).toDouble();
-                } else if (data['level'] != null) {
-                  level = (data['level'] as num).toDouble();
-                } else if (data['percentage'] != null) {
-                  // Convert percentage to cm (assuming 100cm max height for calculation example)
-                  level = ((data['percentage'] as num).toDouble() * 100);
-                  developer.log('Converted percentage to cm: $level',
-                      name: 'VolumePage');
+              // Memeriksa jika 'tinggi_cm' ada dan mencoba mengkonversinya ke double
+              if (data != null && data['tinggi_cm'] != null) {
+                try {
+                  // Menggunakan 'num' untuk penanganan yang lebih fleksibel (int atau double)
+                  level = (data['tinggi_cm'] as num).toDouble();
+                  developer.log('Found and parsed "tinggi_cm": $level', name: 'VolumePage');
+                } catch (e) {
+                  developer.log('Error parsing "tinggi_cm" to double: $e. Raw value: ${data['tinggi_cm']}', name: 'VolumePage');
+                  level = null; // Set level to null if parsing fails
                 }
-              } else if (data is num) {
-                level = data.toDouble();
+              } else {
+                developer.log('Key "tinggi_cm" not found or its value is null in received data at path: $nodeDataPath', name: 'VolumePage');
               }
 
               if (level != null) {
+                // Perbarui state dengan data yang berhasil diambil
                 setState(() {
                   _currentWaterLevel = level!;
                   _hasData = true;
-                  _updateWaterLevelCategory();
+                  _updateWaterLevelCategory(); // Perbarui kategori berdasarkan level baru
                   _isLoading = false;
                 });
                 developer.log(
                     'Water level updated: $_currentWaterLevel cm, Category: $_waterLevelCategory',
                     name: 'VolumePage');
               } else {
-                // Data exists but is unparseable
+                // Jika level null, set status ke UNKNOWN
                 setState(() {
                   _currentWaterLevel = -1.0;
                   _waterLevelCategory = 'UNKNOWN';
@@ -124,11 +152,11 @@ class _VolumePageState extends State<VolumePage> {
                   _hasData = false;
                   _isLoading = false;
                 });
-                developer.log('Water level data is null or unparseable.',
+                developer.log('Water level data (tinggi_cm) is null or unparseable. Status set to UNKNOWN.',
                     name: 'VolumePage');
               }
             } else {
-              // No data exists at the path
+              // Jika snapshot tidak ada atau nilainya null
               setState(() {
                 _currentWaterLevel = -1.0;
                 _waterLevelCategory = 'UNKNOWN';
@@ -136,14 +164,15 @@ class _VolumePageState extends State<VolumePage> {
                 _hasData = false;
                 _isLoading = false;
               });
-              developer.log('No data found at $_waterLevelPath',
+              developer.log('Firebase snapshot does not exist or value is null at path: $nodeDataPath',
                   name: 'VolumePage');
+              _showErrorDialog('Tidak ada data level air untuk node ini atau format data salah.');
             }
           }
         },
         onError: (error) {
           if (mounted) {
-            developer.log('Error fetching data: $error', name: 'VolumePage');
+            developer.log('Firebase data fetching error for path $nodeDataPath: $error', name: 'VolumePage');
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 _showErrorDialog('Error mengambil data level air: $error');
@@ -160,8 +189,9 @@ class _VolumePageState extends State<VolumePage> {
         },
       );
     } catch (e) {
+      // Tangani exception jika terjadi kesalahan di luar stream Firebase
       if (mounted) {
-        developer.log('Error initiating data fetch: $e', name: 'VolumePage');
+        developer.log('Exception caught during data fetch initiation for path $_lastDataPath/$_activeNode: $e', name: 'VolumePage');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _showErrorDialog('Error menginisialisasi pengambilan data: $e');
@@ -178,29 +208,30 @@ class _VolumePageState extends State<VolumePage> {
     }
   }
 
-  // Function to update water level category based on current level
+  // Metode untuk menentukan kategori level air
   void _updateWaterLevelCategory() {
-    // Define your water level thresholds here (example: assuming max tank height is 100 cm for categorization)
-    if (_currentWaterLevel >= 80) {
+    if (_currentWaterLevel >= 201 && _currentWaterLevel <= 300) {
       _waterLevelCategory = 'FULL';
-      _statusColor = const Color(0xFF17778F);
-    } else if (_currentWaterLevel >= 30 && _currentWaterLevel < 80) {
+      _statusColor = const Color(0xFF17778F); // Warna untuk FULL
+    } else if (_currentWaterLevel >= 101 && _currentWaterLevel <= 200) {
       _waterLevelCategory = 'MEDIUM';
-      _statusColor = Colors.orange;
-    } else if (_currentWaterLevel >= 0 && _currentWaterLevel < 30) {
+      _statusColor = Colors.orange; // Warna untuk MEDIUM
+    } else if (_currentWaterLevel >= 0 && _currentWaterLevel <= 100) {
       _waterLevelCategory = 'LOW';
-      _statusColor = Colors.red;
+      _statusColor = Colors.red; // Warna untuk LOW
     } else {
       _waterLevelCategory = 'UNKNOWN';
-      _statusColor = Colors.grey;
+      _statusColor = Colors.grey; // Warna default
     }
   }
 
-  // Manual refresh function - restart real-time listener
+  // Metode untuk refresh data secara manual
   void _refreshData() {
+    developer.log('Refreshing data...', name: 'VolumePage');
     _fetchWaterLevel();
   }
 
+  // Menampilkan dialog error
   void _showErrorDialog(String message) {
     if (!mounted) return;
     showDialog(
@@ -218,7 +249,7 @@ class _VolumePageState extends State<VolumePage> {
           TextButton(
             onPressed: () {
               Navigator.of(ctx).pop();
-              _refreshData();
+              _refreshData(); // Opsi untuk mencoba lagi setelah error
             },
             child: const Text('Coba Lagi'),
           ),
@@ -238,7 +269,6 @@ class _VolumePageState extends State<VolumePage> {
       body: SafeArea(
         child: Column(
           children: [
-            // --- Header ---
             Padding(
               padding: EdgeInsets.fromLTRB(
                   20.0, dynamicTopPadding, 20.0, 20),
@@ -250,7 +280,6 @@ class _VolumePageState extends State<VolumePage> {
                         size: 28),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  // Add refresh button here, next to the back button
                   IconButton(
                     icon: const Icon(Icons.refresh,
                         color: Colors.white,
@@ -262,7 +291,7 @@ class _VolumePageState extends State<VolumePage> {
                   Row(
                     children: [
                       Image.asset(
-                        'images/logoPutih.png',
+                        'images/logoPutih.png', // Pastikan aset ini ada
                         width: screenWidth * 0.09,
                         height: screenWidth * 0.09,
                         errorBuilder: (context, error, stackTrace) {
@@ -275,7 +304,7 @@ class _VolumePageState extends State<VolumePage> {
                       ),
                       const SizedBox(width: 10),
                       Image.asset(
-                        'images/logoUndip.png',
+                        'images/logoUndip.png', // Pastikan aset ini ada
                         width: screenWidth * 0.09,
                         height: screenWidth * 0.09,
                         errorBuilder: (context, error, stackTrace) {
@@ -291,10 +320,7 @@ class _VolumePageState extends State<VolumePage> {
                 ],
               ),
             ),
-
             const SizedBox(height: 20),
-
-            // Title box (first box) - consistent styling, height adjusts to content
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20),
               padding: const EdgeInsets.all(12),
@@ -322,10 +348,7 @@ class _VolumePageState extends State<VolumePage> {
                 ),
               ),
             ),
-
             const SizedBox(height: 40),
-
-            // Tank and label container (second box) - height adjusts to content
             Expanded(
               child: SingleChildScrollView(
                 child: Container(
@@ -349,38 +372,32 @@ class _VolumePageState extends State<VolumePage> {
                     children: [
                       LayoutBuilder(
                         builder: (context, constraints) {
-                          // Hitung ukuran responsif berdasarkan lebar container yang tersedia
                           final availableWidth = constraints.maxWidth;
                           final isSmallScreen = availableWidth < 350;
                           final isMediumScreen = availableWidth >= 350 && availableWidth < 500;
-                          
-                          // Tentukan ukuran gambar berdasarkan ukuran layar
+
                           double tankWidth;
                           double tankHeight;
                           double statusWidth;
-                          
+
                           if (isSmallScreen) {
-                            // Layar kecil (HP compact)
                             tankWidth = availableWidth * 0.5;
                             tankHeight = screenHeight * 0.35;
                             statusWidth = availableWidth * 0.4;
                           } else if (isMediumScreen) {
-                            // Layar sedang (HP normal)
                             tankWidth = availableWidth * 0.45;
                             tankHeight = screenHeight * 0.4;
                             statusWidth = availableWidth * 0.35;
                           } else {
-                            // Layar besar (tablet)
                             tankWidth = availableWidth * 0.4;
                             tankHeight = screenHeight * 0.45;
                             statusWidth = availableWidth * 0.3;
                           }
-                          
+
                           return Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              // Tank Image - Responsive berdasarkan ukuran layar
                               Flexible(
                                 flex: isSmallScreen ? 6 : 5,
                                 child: Container(
@@ -389,7 +406,7 @@ class _VolumePageState extends State<VolumePage> {
                                     maxHeight: tankHeight,
                                   ),
                                   child: Image.asset(
-                                    'images/tank3.png',
+                                    'images/tank3.png', // Pastikan aset ini ada
                                     width: tankWidth,
                                     height: tankHeight,
                                     fit: BoxFit.contain,
@@ -411,10 +428,7 @@ class _VolumePageState extends State<VolumePage> {
                                   ),
                                 ),
                               ),
-
                               SizedBox(width: isSmallScreen ? 5 : 10),
-
-                              // Status indicators and labels dengan lebar yang fleksibel
                               Flexible(
                                 flex: isSmallScreen ? 4 : 4,
                                 child: Container(
@@ -425,8 +439,8 @@ class _VolumePageState extends State<VolumePage> {
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     crossAxisAlignment: CrossAxisAlignment.center,
                                     children: [
-                                      // Show loading indicator when loading or no data
-                                      if (_isLoading || !_hasData)
+                                      // Logika untuk menampilkan CircularProgressIndicator saat loading atau tidak ada data
+                                      if (_isLoading || !_hasData || _currentWaterLevel == -1.0)
                                         SizedBox(
                                           width: isSmallScreen ? 25 : 30,
                                           height: isSmallScreen ? 25 : 30,
@@ -435,7 +449,6 @@ class _VolumePageState extends State<VolumePage> {
                                             strokeWidth: 3,
                                           ),
                                         )
-                                      // Show status when we have data
                                       else
                                         _buildCategoryStatusRow(
                                             _waterLevelCategory,
@@ -461,7 +474,6 @@ class _VolumePageState extends State<VolumePage> {
     );
   }
 
-  // Helper widget to build the category status row (e.g., "FULL", "MEDIUM", "LOW" with arrow)
   Widget _buildCategoryStatusRow(String statusText, bool isCurrentStatus, bool isSmallScreen) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,

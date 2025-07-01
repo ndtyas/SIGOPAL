@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart' as auth_firebase;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
-import 'package:firebase_core/firebase_core.dart';
 import 'dart:developer' as developer;
+import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart';
 
 
 class PrimaryStyledButton extends StatelessWidget {
@@ -16,7 +17,7 @@ class PrimaryStyledButton extends StatelessWidget {
   final Color? backgroundColor;
   final Color? foregroundColor;
   final Widget? leadingIcon;
-  final bool iconOnTop; 
+  final bool iconOnTop;
 
   const PrimaryStyledButton({
     super.key,
@@ -26,7 +27,7 @@ class PrimaryStyledButton extends StatelessWidget {
     this.backgroundColor,
     this.foregroundColor,
     this.leadingIcon,
-    this.iconOnTop = false, 
+    this.iconOnTop = false,
   });
 
   @override
@@ -35,7 +36,7 @@ class PrimaryStyledButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: backgroundColor ?? Colors.white,
         foregroundColor: foregroundColor ?? const Color(0xFF17778F),
-        minimumSize: const Size(double.infinity, 80), 
+        minimumSize: const Size(double.infinity, 80),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         shape: RoundedRectangleBorder(
@@ -52,10 +53,10 @@ class PrimaryStyledButton extends StatelessWidget {
                 color: Color(0xFF17778F),
               ),
             )
-          : iconOnTop 
-              ? Column( 
+          : iconOnTop
+              ? Column(
                   mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center, 
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     if (leadingIcon != null) ...[
                       leadingIcon!,
@@ -71,12 +72,12 @@ class PrimaryStyledButton extends StatelessWidget {
                     ),
                   ],
                 )
-              : Row( 
+              : Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (leadingIcon != null) ...[
                       leadingIcon!,
-                      const SizedBox(width: 8), 
+                      const SizedBox(width: 8),
                     ],
                     Flexible(
                       child: Text(
@@ -100,7 +101,8 @@ class BillingScreen extends StatefulWidget {
 }
 
 class _BillingScreenState extends State<BillingScreen> {
-  static const String _meterReadingsPath = 'meter_readings';
+  static const String _lastDataPath = 'last_data';
+  static const String _historyPath = 'debit_history'; // Menggunakan _historyPath
 
   DateTime? startDate;
   DateTime? endDate;
@@ -118,6 +120,7 @@ class _BillingScreenState extends State<BillingScreen> {
   List<Map<String, dynamic>> _billingHistory = [];
 
   late DatabaseReference _databaseRef;
+  String? _activeNode;
 
   @override
   void initState() {
@@ -134,16 +137,10 @@ class _BillingScreenState extends State<BillingScreen> {
 
   void _initializeFirebase() {
     try {
-      const String databaseURL = 'https://sigopal-default-rtdb.firebaseio.com';
-      _databaseRef = FirebaseDatabase.instanceFor(
-        app: Firebase.app(),
-        databaseURL: databaseURL,
-      ).ref();
-      developer.log('Firebase initialized successfully with URL: $databaseURL in BillingScreen', name: 'BillingScreen');
+      _databaseRef = FirebaseDatabase.instance.ref();
+      developer.log('Firebase initialized successfully in BillingScreen', name: 'BillingScreen');
     } catch (e) {
       developer.log('Error initializing Firebase in BillingScreen: $e', name: 'BillingScreen');
-      _databaseRef = FirebaseDatabase.instance.ref();
-      developer.log('Falling back to default Firebase instance in BillingScreen', name: 'BillingScreen');
     }
   }
 
@@ -156,14 +153,19 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
 
-  // Refactored to automatically determine date range and fetch meter readings
   void _loadUserDataAndBilling() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      meterAwal = 0.0; // Reset values to show loading state
+      meterAkhir = 0.0;
+      _currentUsage = 0.0;
+      _currentTotalCost = 0.0;
+      startDate = null;
+      endDate = null;
     });
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = auth_firebase.FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
         final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -171,24 +173,37 @@ class _BillingScreenState extends State<BillingScreen> {
           final data = userDoc.data();
           setState(() {
             userName = data?['username'] ?? user.displayName ?? user.email ?? "Pengguna";
-            nodeName = data?['nodeName'] ?? "Node Tidak Ditemukan";
           });
-          // Once nodeName is set, fetch meter readings
-          if (nodeName != "Memuat..." && !nodeName.contains("Tidak Ditemukan") && !nodeName.contains("Error")) {
-            await _determineAndFetchMeterReadings(nodeName);
+
+          final auth = Provider.of<AuthProvider>(context, listen: false);
+          final retrievedNode = auth.getCurrentNode();
+          if (retrievedNode != null) {
+            setState(() {
+              nodeName = retrievedNode;
+              _activeNode = retrievedNode;
+            });
+            await _calculateMeterReadings(retrievedNode);
+          } else {
+            setState(() {
+              nodeName = "Node Tidak Ditemukan";
+              _activeNode = null;
+            });
+            _showErrorSnackBar("Tidak dapat menemukan node. Harap masukkan node di halaman sebelumnya.");
           }
         } else if (mounted) {
           setState(() {
             userName = user.displayName ?? user.email ?? "Pengguna";
             nodeName = "Node Tidak Ditemukan";
+            _activeNode = null;
           });
-          _showErrorSnackBar("Tidak dapat menemukan data node untuk pengguna ini.");
+          _showErrorSnackBar("Tidak dapat menemukan data pengguna ini.");
         }
       } catch (e) {
         if (mounted) {
           setState(() {
             userName = user.displayName ?? user.email ?? "Pengguna";
             nodeName = "Error Mengambil Node";
+            _activeNode = null;
           });
           _showErrorSnackBar("Error fetching user data from Firestore: $e");
           if (kDebugMode) {
@@ -201,6 +216,7 @@ class _BillingScreenState extends State<BillingScreen> {
         setState(() {
           userName = "Pengguna";
           nodeName = "Node Tidak Tersedia";
+          _activeNode = null;
         });
         _showErrorSnackBar("Pengguna tidak masuk.");
       }
@@ -213,57 +229,79 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
 
-  // New function to determine the date range and fetch readings
-  Future<void> _determineAndFetchMeterReadings(String node) async {
+  Future<void> _calculateMeterReadings(String node) async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-    });
 
     try {
-      final DataSnapshot snapshot = await _databaseRef
-          .child(_meterReadingsPath)
+      // 1. Ambil data meter akhir (data terakhir) dari debit_air
+      final DataSnapshot lastDebitSnapshot = await _databaseRef
+          .child(_lastDataPath)
           .child(node)
-          .orderByKey()
+          .child('debit_air')
           .get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        final Map<dynamic, dynamic> readings = snapshot.value as Map<dynamic, dynamic>;
-        if (readings.isNotEmpty) {
-          final sortedKeys = readings.keys.cast<String>().toList()..sort();
+      double lastDebit = 0.0;
+      if (lastDebitSnapshot.exists && lastDebitSnapshot.value != null) {
+        lastDebit = (lastDebitSnapshot.value as num?)?.toDouble() ?? 0.0;
+      }
+      developer.log('Meter Akhir (last_data/debit_air): $lastDebit', name: 'BillingScreen');
 
-          // Get the earliest and latest date from the available readings
-          startDate = DateFormat('yyyy-MM-dd').parse(sortedKeys.first);
-          endDate = DateFormat('yyyy-MM-dd').parse(sortedKeys.last);
+      // 2. Ambil data meter awal (debit air bulan kemarin)
+      double startDebit = 0.0;
+      
+      final now = DateTime.now();
+      endDate = DateTime(now.year, now.month, now.day, now.hour, now.minute, now.second); 
+      
+      // Calculate the start date for the previous month's reading
+      // If current month is July 2025, we want the last reading from June 2025.
+      // So, startOfCurrentMonth is July 1, 2025.
+      // We look for a reading just before July 1, 2025 (i.e., end of June 2025).
+      final startOfCurrentMonth = DateTime(now.year, now.month, 1);
+      
+      // Set startDate to the first day of the previous month for display purposes
+      startDate = DateTime(now.year, now.month - 1, 1);
 
-          // Fetch the meter readings for this determined period
-          await _fetchMeterReadingsForPeriod(startDate!, endDate!);
-        } else {
-          _showInfoSnackBar("Tidak ada data meteran untuk node ini.");
-          if (mounted) {
-            setState(() {
-              meterAwal = 0.0;
-              meterAkhir = 0.0;
-              _currentUsage = 0.0;
-              _currentTotalCost = 0.0;
-            });
+
+      final historyRef = _databaseRef.child(_historyPath).child(node); // Menggunakan _historyPath
+      final DataSnapshot historySnapshot = await historyRef
+          .orderByKey()
+          .endAt((startOfCurrentMonth.millisecondsSinceEpoch - 1).toString()) // Cari sebelum awal bulan ini
+          .limitToLast(1) 
+          .get();
+
+      if (historySnapshot.exists && historySnapshot.value != null) {
+        final Map<dynamic, dynamic>? historyData = historySnapshot.value as Map<dynamic, dynamic>?;
+        if (historyData != null && historyData.isNotEmpty) {
+          final String lastTimestampKey = historyData.keys.first;
+          final double? value = (historyData[lastTimestampKey] as num?)?.toDouble();
+          if (value != null) {
+            startDebit = value;
+            developer.log('Meter Awal (from history before current month): $startDebit', name: 'BillingScreen');
+          } else {
+              developer.log('History data exists but value is null for key: $lastTimestampKey', name: 'BillingScreen');
           }
         }
       } else {
-        _showInfoSnackBar("Tidak ada data meteran ditemukan untuk node ini.");
-        if (mounted) {
-          setState(() {
-            meterAwal = 0.0;
-            meterAkhir = 0.0;
-            _currentUsage = 0.0;
-            _currentTotalCost = 0.0;
-          });
-        }
+        developer.log('No historical debit data found for node $node before ${DateFormat('dd-MM-yyyy').format(startOfCurrentMonth)}', name: 'BillingScreen');
+        // Peringatan ini bisa diubah menjadi _showInfoSnackBar jika Anda ingin memberitahu pengguna
+        _showInfoSnackBar("Tidak ada riwayat meter awal bulan lalu. Meter awal diatur ke 0.");
       }
+      
+      setState(() {
+        meterAwal = startDebit;
+        meterAkhir = lastDebit;
+        _currentUsage = meterAkhir - meterAwal;
+        if (_currentUsage < 0) _currentUsage = 0.0;
+        _currentTotalCost = _currentUsage * hargaPerCBM;
+
+        // this.startDate = startDate; // Peringatan: Unnecessary 'this.' qualifier
+        // this.endDate = endDate;   // Peringatan: Unnecessary 'this.' qualifier
+      });
+
     } catch (e) {
-      _showErrorSnackBar("Error menentukan rentang tanggal meteran: $e");
+      _showErrorSnackBar("Error menghitung meteran: $e");
       if (kDebugMode) {
-        print("Error determining meter reading date range: $e");
+        print("Error calculating meter readings: $e");
       }
       if (mounted) {
         setState(() {
@@ -271,6 +309,8 @@ class _BillingScreenState extends State<BillingScreen> {
           meterAkhir = 0.0;
           _currentUsage = 0.0;
           _currentTotalCost = 0.0;
+          startDate = null;
+          endDate = null;
         });
       }
     } finally {
@@ -282,89 +322,12 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
 
-  Future<double> _getLatestMeterReadingOnOrBefore(String nodeName, DateTime date) async {
-    final String dateStr = DateFormat('yyyy-MM-dd').format(date);
-    try {
-      final DataSnapshot snapshot = await _databaseRef
-          .child(_meterReadingsPath)
-          .child(nodeName)
-          .orderByKey()
-          .endAt(dateStr)
-          .limitToLast(1)
-          .get();
-
-      if (snapshot.exists && snapshot.value != null) {
-        final Map<dynamic, dynamic> readings = snapshot.value as Map<dynamic, dynamic>;
-        if (readings.isNotEmpty) {
-          final latestReadingValue = readings.values.first;
-          return (latestReadingValue as num?)?.toDouble() ?? 0.0;
-        }
-      }
-    } catch (e) {
-      developer.log('Error fetching meter reading for node $nodeName on date $date: $e', name: 'BillingScreen');
-    }
-    return 0.0;
-  }
-
-  Future<void> _fetchMeterReadingsForPeriod(DateTime start, DateTime end) async {
-    if (!mounted) return;
-
-    if (nodeName == "Memuat..." || nodeName.contains("Tidak Ditemukan") || nodeName.contains("Error")) {
-      _showErrorSnackBar("Tidak dapat mengambil data meteran: $nodeName.");
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      meterAwal = 0.0;
-      meterAkhir = 0.0;
-      _currentUsage = 0.0;
-      _currentTotalCost = 0.0;
-    });
-
-    try {
-      final double startPeriodReading = await _getLatestMeterReadingOnOrBefore(nodeName, start);
-      final double endPeriodReading = await _getLatestMeterReadingOnOrBefore(nodeName, end);
-
-      if (mounted) {
-        setState(() {
-          meterAwal = startPeriodReading;
-          meterAkhir = endPeriodReading;
-          _currentUsage = (meterAkhir >= meterAwal) ? (meterAkhir - meterAwal) : 0.0;
-          _currentTotalCost = _currentUsage * hargaPerCBM;
-        });
-      }
-
-      if (meterAwal == 0.0 && meterAkhir == 0.0 && mounted) {
-        _showInfoSnackBar("Tidak ada data meteran untuk periode yang dipilih.");
-      } else if (meterAwal == 0.0 && meterAkhir > 0.0 && mounted) {
-        _showInfoSnackBar("Data awal meteran tidak ditemukan. Perhitungan dimulai dari 0.");
-      }
-    } catch (e) {
-      _showErrorSnackBar("Error mengambil data meteran: $e");
-      if (kDebugMode) {
-        print("Error fetching meter readings from RTDB: $e");
-      }
-      setState(() {
-        meterAwal = 0.0;
-        meterAkhir = 0.0;
-        _currentUsage = 0.0;
-        _currentTotalCost = 0.0;
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
 
   void _saveBillingData() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || startDate == null || endDate == null) {
+    final user = auth_firebase.FirebaseAuth.instance.currentUser;
+    if (user == null || startDate == null || endDate == null || _activeNode == null) {
       if (mounted) {
-        _showErrorSnackBar("Data tidak lengkap untuk disimpan. Pastikan tanggal telah dipilih.");
+        _showErrorSnackBar("Data tidak lengkap untuk disimpan. Pastikan node dan tanggal telah dipilih.");
       }
       return;
     }
@@ -387,21 +350,13 @@ class _BillingScreenState extends State<BillingScreen> {
         'totalCost': _currentTotalCost,
         'timestamp': FieldValue.serverTimestamp(),
         'docId': docId,
-        'nodeName': nodeName,
+        'nodeName': _activeNode,
       });
 
       if (mounted) {
         _showSuccessSnackBar("Data tagihan berhasil disimpan!");
         _loadBillingHistory();
-        // Reset the current display to potentially trigger a re-fetch of current period
-        setState(() {
-          startDate = null;
-          endDate = null;
-          meterAwal = 0.0;
-          meterAkhir = 0.0;
-          _currentUsage = 0.0;
-          _currentTotalCost = 0.0;
-        });
+        // Reset state untuk tampilan tagihan saat ini setelah disimpan
         _loadUserDataAndBilling(); 
       }
     } catch (e) {
@@ -415,7 +370,7 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 
   void _loadBillingHistory() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = auth_firebase.FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (mounted) {
         setState(() => _billingHistory = []);
@@ -449,13 +404,13 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 
   void _logout(BuildContext context) async {
-    await FirebaseAuth.instance.signOut();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    await auth.signOut();
     if (context.mounted) {
       Navigator.pushReplacementNamed(context, '/checkauth');
     }
   }
 
-  // Helper for showing snackbars
   void _showSnackBar(String message, Color backgroundColor) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -537,20 +492,31 @@ class _BillingScreenState extends State<BillingScreen> {
                       ),
                     ),
                     const Spacer(),
+                    // New placement for the history icon button
+                    IconButton(
+                      icon: Image.asset(
+                        'images/riwayat2.png', // Path gambar yang baru
+                        width: 28, // Ukuran ikon sesuai dengan ikon lain
+                        height: 28,
+                        color: Colors.white, // Sesuaikan warna jika gambar berupa ikon satu warna
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.history, // Fallback icon jika gambar tidak ditemukan
+                            color: Colors.white,
+                            size: 28,
+                          );
+                        },
+                      ),
+                      onPressed: () {
+                        _loadBillingHistory();
+                        _showBillingHistoryDateList(context);
+                      },
+                      tooltip: 'Lihat Riwayat Tagihan',
+                    ),
                     IconButton(
                       icon: const Icon(Icons.refresh, color: Colors.white, size: 28),
                       onPressed: () {
-                        // Reset all and re-fetch to get the latest period
-                        setState(() {
-                          startDate = null;
-                          endDate = null;
-                          meterAwal = 0.0;
-                          meterAkhir = 0.0;
-                          _currentUsage = 0.0;
-                          _currentTotalCost = 0.0;
-                          _isLoading = false;
-                        });
-                        _loadUserDataAndBilling();
+                        _loadUserDataAndBilling(); // Refresh data tagihan saat ini
                       },
                       tooltip: 'Refresh Data',
                     ),
@@ -593,6 +559,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                   fontWeight: FontWeight.bold,
                                   color: Color(0xFF17778F),
                                 ),
+                                textAlign: TextAlign.center,
                               ),
                             ),
                             const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
@@ -665,17 +632,11 @@ class _BillingScreenState extends State<BillingScreen> {
                               text: "SIMPAN DATA TAGIHAN",
                               isLoading: _isLoading,
                             ),
-                            const SizedBox(height: 10),
-                            PrimaryStyledButton(
-                              onPressed: () {
-                                _loadBillingHistory();
-                                _showBillingHistoryDateList(context);
-                              },
-                              text: "LIHAT RIWAYAT TAGIHAN",
-                            ),
+                            // The "LIHAT RIWAYAT TAGIHAN" button and its SizedBox are removed from here
                           ],
                         ),
                       ),
+                      const SizedBox(height: 20),
                     ],
                   ),
                 ),
@@ -687,7 +648,6 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  // --- Dialog Widgets (No significant changes needed, they are already well-structured) ---
   void _showBillingHistoryDateList(BuildContext context) {
     final Map<String, List<Map<String, dynamic>>> groupedHistory = {};
     for (var record in _billingHistory) {
@@ -854,7 +814,7 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 
   void _deleteBillingRecord(Map<String, dynamic> billingRecord) async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = auth_firebase.FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (mounted) {
         _showErrorSnackBar("Anda perlu masuk untuk menghapus data.");

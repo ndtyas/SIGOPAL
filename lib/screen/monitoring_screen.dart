@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart';
 
 class MonitoringScreen extends StatefulWidget {
   const MonitoringScreen({super.key});
@@ -12,23 +13,42 @@ class MonitoringScreen extends StatefulWidget {
 }
 
 class _MonitoringScreenState extends State<MonitoringScreen> {
-  // Constants
-  static const String _waterQualityPath = 'water_quality';
+  static const String _lastDataPath = 'last_data';
 
-  // State variables to hold the fetched data
   String _tdsValue = 'N/A';
   String _phValue = 'N/A';
   bool _isLoading = true;
 
-  // Firebase Realtime Database reference
   late DatabaseReference _databaseRef;
   StreamSubscription<DatabaseEvent>? _dataSubscription;
+
+  String? _activeNode;
 
   @override
   void initState() {
     super.initState();
     _initializeFirebase();
-    _fetchWaterQualityData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final newNode = auth.getCurrentNode();
+
+    if (newNode != _activeNode) {
+      _activeNode = newNode;
+      if (_activeNode != null) {
+        _fetchWaterQualityData();
+      } else {
+        setState(() {
+          _tdsValue = 'N/A';
+          _phValue = 'N/A';
+          _isLoading = false;
+        });
+        _showErrorDialog('Node belum dipilih atau tidak valid.');
+      }
+    }
   }
 
   @override
@@ -37,10 +57,8 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     super.dispose();
   }
 
-  // Initialize Firebase Database reference menggunakan default instance
   void _initializeFirebase() {
     try {
-      // Menggunakan Firebase Database default instance yang sudah dikonfigurasi
       _databaseRef = FirebaseDatabase.instance.ref();
       developer.log('Firebase Database initialized successfully', name: 'MonitoringScreen');
     } catch (e) {
@@ -48,12 +66,23 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     }
   }
 
-  // Real-time data fetching from Firebase Realtime Database
   Future<void> _fetchWaterQualityData() async {
+    if (_activeNode == null) {
+      setState(() {
+        _isLoading = false;
+        _tdsValue = 'N/A';
+        _phValue = 'N/A';
+      });
+      return;
+    }
+
     try {
       _dataSubscription?.cancel();
 
-      _dataSubscription = _databaseRef.child(_waterQualityPath).onValue.listen(
+      final nodeDataPath = '$_lastDataPath/$_activeNode';
+      developer.log('Fetching data from: $nodeDataPath', name: 'MonitoringScreen');
+
+      _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
           if (mounted) {
             if (event.snapshot.exists) {
@@ -71,6 +100,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                   _phValue = 'N/A';
                   _isLoading = false;
                 });
+                developer.log('Data is null at path: $nodeDataPath', name: 'MonitoringScreen');
               }
             } else {
               setState(() {
@@ -78,7 +108,8 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                 _phValue = 'N/A';
                 _isLoading = false;
               });
-              developer.log('No data exists at path: $_waterQualityPath', name: 'MonitoringScreen');
+              developer.log('No data exists at path: $nodeDataPath', name: 'MonitoringScreen');
+              _showErrorDialog('Tidak ada data untuk node ini.');
             }
           }
         },
@@ -123,8 +154,9 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   }
 
   void _logout(BuildContext context) async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      await FirebaseAuth.instance.signOut();
+      await auth.signOut();
       if (context.mounted) {
         Navigator.pushReplacementNamed(context, '/checkauth');
       }
@@ -148,7 +180,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.26),
+            color: const Color(0x42000000),
             blurRadius: 12,
             spreadRadius: 3,
             offset: const Offset(0, 6),
@@ -167,12 +199,11 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
               return Icon(
                 Icons.image_not_supported,
                 size: 50,
-                color: Colors.white.withValues(alpha: 0.7),
+                color: const Color(0xB3FFFFFF),
               );
             },
           ),
           const SizedBox(height: 6),
-          // Tampilkan loading jika nilai adalah "N/A", atau loading state aktif
           (_isLoading || value == 'N/A')
               ? const SizedBox(
                   width: 20,
@@ -214,7 +245,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.26),
+            color: const Color(0x42000000),
             blurRadius: 12,
             spreadRadius: 3,
             offset: const Offset(0, 6),
@@ -233,7 +264,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
               return Icon(
                 Icons.verified,
                 size: 60,
-                color: Colors.white.withValues(alpha: 0.7),
+                color: const Color(0xB3FFFFFF),
               );
             },
           ),
@@ -361,7 +392,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                             color: Colors.white,
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
+                                color: const Color(0x4D000000),
                                 blurRadius: 15,
                                 spreadRadius: 3,
                                 offset: const Offset(0, 8),

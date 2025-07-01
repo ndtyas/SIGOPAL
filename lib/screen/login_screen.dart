@@ -145,7 +145,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                     decoration: InputDecoration(
                                       hintText: "Masukkan Nama....",
-                                      hintStyle: TextStyle(color: const Color(0xE617778F).withOpacity(0.6)),
+                                      // Ganti TextStyle().withOpacity(0.6) dengan Color ARGB
+                                      hintStyle: const TextStyle(color: Color(0x9917778F)), // 0x99 = 60% dari 0xE6
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(15),
                                         borderSide: const BorderSide(color: Color(0xE617778F)),
@@ -193,7 +194,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                   decoration: InputDecoration(
                                     hintText: "Masukkan Email...",
-                                    hintStyle: TextStyle(color: const Color(0xE617778F).withOpacity(0.6)),
+                                    // Ganti TextStyle().withOpacity(0.6) dengan Color ARGB
+                                    hintStyle: const TextStyle(color: Color(0x9917778F)),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(15),
                                       borderSide: const BorderSide(color: Color(0xE617778F)),
@@ -257,15 +259,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   if (auth.islogin) {
                                     auth.submit(
                                       onSuccess: () async {
-                                        // On successful login, check if node is already set
-                                        if (!context.mounted) return; 
-                                        final userNode = await auth.getUserNode();
-                                        if (!context.mounted) return; 
-                                        if (userNode == null || userNode.isEmpty) {
-                                          Navigator.pushNamedAndRemoveUntil(context, '/node_screen', (route) => false);
-                                        } else {
-                                          Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
-                                        }
+                                        // Langsung navigasi ke NodeScreen setelah login berhasil
+                                        if (!context.mounted) return;
+                                        Navigator.pushNamedAndRemoveUntil(context, '/node_screen', (route) => false);
                                       },
                                       onError: (msg) {
                                         if (!context.mounted) return;
@@ -277,7 +273,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   } else {
                                     auth.register(
                                       onError: (msg) {
-                                        if (!context.mounted) return; 
+                                        if (!context.mounted) return;
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           SnackBar(content: Text(msg)),
                                         );
@@ -294,7 +290,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('Registrasi berhasil! Silakan aktivasi email Anda sebelum login.')),
                                         );
-                                      }
+                                      },
                                     );
                                   }
                                 },
