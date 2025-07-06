@@ -9,7 +9,6 @@ import 'dart:developer' as developer;
 import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
 
-
 class PrimaryStyledButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String text;
@@ -102,7 +101,6 @@ class BillingScreen extends StatefulWidget {
 
 class _BillingScreenState extends State<BillingScreen> {
   static const String _lastDataPath = 'last_data';
-  static const String _historyPath = 'debit_history'; // Menggunakan _historyPath
 
   DateTime? startDate;
   DateTime? endDate;
@@ -128,6 +126,15 @@ class _BillingScreenState extends State<BillingScreen> {
     _initializeFirebase();
     _loadUserDataAndBilling();
     _loadBillingHistory();
+    _triggerCheckAndSaveMonthlyBillAfterLoad();
+  }
+
+  // A helper to trigger the check after initial data is loaded
+  void _triggerCheckAndSaveMonthlyBillAfterLoad() async {
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (mounted) {
+      _checkAndSaveMonthlyBill();
+    }
   }
 
   @override
@@ -138,26 +145,39 @@ class _BillingScreenState extends State<BillingScreen> {
   void _initializeFirebase() {
     try {
       _databaseRef = FirebaseDatabase.instance.ref();
-      developer.log('Firebase initialized successfully in BillingScreen', name: 'BillingScreen');
+      developer.log('Firebase initialized successfully in BillingScreen',
+          name: 'BillingScreen');
     } catch (e) {
-      developer.log('Error initializing Firebase in BillingScreen: $e', name: 'BillingScreen');
+      developer.log('Error initializing Firebase in BillingScreen: $e',
+          name: 'BillingScreen');
     }
   }
 
   String _formatCurrency(double amount) {
-    final formatter = NumberFormat('#,##0', 'id_ID');
-    if (amount == amount.toInt()) {
-      return formatter.format(amount.toInt());
-    } else {
-      return NumberFormat('#,##0.00', 'id_ID').format(amount);
+    final formatter = NumberFormat('#,##0.00', 'id_ID');
+    return formatter.format(amount);
+  }
+
+  // Helper function to safely convert dynamic value to double
+  double _convertToDouble(dynamic value) {
+    if (value == null) {
+      return 0.0;
     }
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      // Try parsing string as double, default to 0.0 if not a valid number
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
   }
 
   void _loadUserDataAndBilling() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
-      meterAwal = 0.0; // Reset values to show loading state
+      meterAwal = 0.0;
       meterAkhir = 0.0;
       _currentUsage = 0.0;
       _currentTotalCost = 0.0;
@@ -168,7 +188,8 @@ class _BillingScreenState extends State<BillingScreen> {
     final user = auth_firebase.FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final userDoc =
+            await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
         if (mounted && userDoc.exists) {
           final data = userDoc.data();
           setState(() {
@@ -188,7 +209,8 @@ class _BillingScreenState extends State<BillingScreen> {
               nodeName = "Node Tidak Ditemukan";
               _activeNode = null;
             });
-            _showErrorSnackBar("Tidak dapat menemukan node. Harap masukkan node di halaman sebelumnya.");
+            _showErrorSnackBar(
+                "Tidak dapat menemukan node. Harap masukkan node di halaman sebelumnya.");
           }
         } else if (mounted) {
           setState(() {
@@ -233,71 +255,46 @@ class _BillingScreenState extends State<BillingScreen> {
     if (!mounted) return;
 
     try {
-      // 1. Ambil data meter akhir (data terakhir) dari debit_air
-      final DataSnapshot lastDebitSnapshot = await _databaseRef
-          .child(_lastDataPath)
-          .child(node)
-          .child('debit_air')
-          .get();
-
-      double lastDebit = 0.0;
-      if (lastDebitSnapshot.exists && lastDebitSnapshot.value != null) {
-        lastDebit = (lastDebitSnapshot.value as num?)?.toDouble() ?? 0.0;
-      }
-      developer.log('Meter Akhir (last_data/debit_air): $lastDebit', name: 'BillingScreen');
-
-      // 2. Ambil data meter awal (debit air bulan kemarin)
-      double startDebit = 0.0;
-      
       final now = DateTime.now();
-      endDate = DateTime(now.year, now.month, now.day, now.hour, now.minute, now.second); 
-      
-      // Calculate the start date for the previous month's reading
-      // If current month is July 2025, we want the last reading from June 2025.
-      // So, startOfCurrentMonth is July 1, 2025.
-      // We look for a reading just before July 1, 2025 (i.e., end of June 2025).
-      final startOfCurrentMonth = DateTime(now.year, now.month, 1);
-      
-      // Set startDate to the first day of the previous month for display purposes
-      startDate = DateTime(now.year, now.month - 1, 1);
+      endDate = DateTime(now.year, now.month, now.day, now.hour, now.minute, now.second);
+      startDate = DateTime(now.year, now.month, 1);
 
+      // 1. Get current accumulated debit (meterAkhir)
+      final DataSnapshot lastDebitSnapshot =
+          await _databaseRef.child(_lastDataPath).child(node).child('debit_air').get();
 
-      final historyRef = _databaseRef.child(_historyPath).child(node); // Menggunakan _historyPath
-      final DataSnapshot historySnapshot = await historyRef
-          .orderByKey()
-          .endAt((startOfCurrentMonth.millisecondsSinceEpoch - 1).toString()) // Cari sebelum awal bulan ini
-          .limitToLast(1) 
-          .get();
+      // Use _convertToDouble to handle various data types safely
+      double currentDebit = _convertToDouble(lastDebitSnapshot.value);
+      developer.log('Meter Akhir (current debit_air): $currentDebit',
+          name: 'BillingScreen');
 
-      if (historySnapshot.exists && historySnapshot.value != null) {
-        final Map<dynamic, dynamic>? historyData = historySnapshot.value as Map<dynamic, dynamic>?;
-        if (historyData != null && historyData.isNotEmpty) {
-          final String lastTimestampKey = historyData.keys.first;
-          final double? value = (historyData[lastTimestampKey] as num?)?.toDouble();
-          if (value != null) {
-            startDebit = value;
-            developer.log('Meter Awal (from history before current month): $startDebit', name: 'BillingScreen');
-          } else {
-              developer.log('History data exists but value is null for key: $lastTimestampKey', name: 'BillingScreen');
-          }
-        }
+      // 2. Get previous month's accumulated debit (meterAwal)
+      double previousMonthDebit = 0.0;
+      final previousMonth = DateTime(now.year, now.month - 1, 1);
+      final previousMonthKey = DateFormat('yyyy-MM').format(previousMonth);
+
+      final DataSnapshot previousMonthSnapshot =
+          await _databaseRef.child(_lastDataPath).child(node).child(previousMonthKey).get();
+
+      if (previousMonthSnapshot.exists && previousMonthSnapshot.value != null) {
+        // Use _convertToDouble to handle various data types safely
+        previousMonthDebit = _convertToDouble(previousMonthSnapshot.value);
+        developer.log(
+            'Meter Awal (from RTDB $previousMonthKey): $previousMonthDebit',
+            name: 'BillingScreen');
       } else {
-        developer.log('No historical debit data found for node $node before ${DateFormat('dd-MM-yyyy').format(startOfCurrentMonth)}', name: 'BillingScreen');
-        // Peringatan ini bisa diubah menjadi _showInfoSnackBar jika Anda ingin memberitahu pengguna
-        _showInfoSnackBar("Tidak ada riwayat meter awal bulan lalu. Meter awal diatur ke 0.");
+        developer.log(
+            'No previous month debit data found for node $node under key $previousMonthKey. Assuming 0.',
+            name: 'BillingScreen');
       }
-      
+
       setState(() {
-        meterAwal = startDebit;
-        meterAkhir = lastDebit;
+        meterAwal = previousMonthDebit;
+        meterAkhir = currentDebit;
         _currentUsage = meterAkhir - meterAwal;
         if (_currentUsage < 0) _currentUsage = 0.0;
         _currentTotalCost = _currentUsage * hargaPerCBM;
-
-        // this.startDate = startDate; // Peringatan: Unnecessary 'this.' qualifier
-        // this.endDate = endDate;   // Peringatan: Unnecessary 'this.' qualifier
       });
-
     } catch (e) {
       _showErrorSnackBar("Error menghitung meteran: $e");
       if (kDebugMode) {
@@ -322,50 +319,111 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
 
-
-  void _saveBillingData() async {
+  Future<void> _checkAndSaveMonthlyBill() async {
     final user = auth_firebase.FirebaseAuth.instance.currentUser;
-    if (user == null || startDate == null || endDate == null || _activeNode == null) {
-      if (mounted) {
-        _showErrorSnackBar("Data tidak lengkap untuk disimpan. Pastikan node dan tanggal telah dipilih.");
-      }
+    if (user == null || _activeNode == null || startDate == null || endDate == null) {
+      developer.log("Skipping _checkAndSaveMonthlyBill: User, node, or date data is null.", name: 'BillingScreen');
       return;
     }
 
+    final now = DateTime.now();
+    final currentMonthYearKey = DateFormat('yyyy-MM').format(now);
+    
+    final lastDayOfMonth = DateTime(now.year, now.month + 1, 0).day; 
+
+    if (now.day == lastDayOfMonth) {
+      developer.log('It is the last day of the month (${now.day}/$lastDayOfMonth). Checking for saved bill.', name: 'BillingScreen');
+      try {
+        final startOfMonthTimestamp = Timestamp.fromDate(DateTime(now.year, now.month, 1, 0, 0, 0));
+        final startOfNextMonthTimestamp = Timestamp.fromDate(DateTime(now.year, now.month + 1, 1, 0, 0, 0));
+
+        final querySnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .collection('billing_records')
+            .where('nodeName', isEqualTo: _activeNode)
+            .where('startDate', isGreaterThanOrEqualTo: startOfMonthTimestamp)
+            .where('startDate', isLessThan: startOfNextMonthTimestamp)
+            .limit(1)
+            .get();
+
+        if (querySnapshot.docs.isEmpty) {
+          developer.log('No existing bill found for $currentMonthYearKey. Auto-saving now.',
+              name: 'BillingScreen');
+          await _saveBillingDataInternal(
+            user.uid,
+            _activeNode!,
+            startDate!, 
+            endDate!,
+            meterAwal,
+            meterAkhir,
+            hargaPerCBM,
+            _currentUsage,
+            _currentTotalCost,
+          );
+          if (mounted) {
+            _showSuccessSnackBar("Tagihan bulan ini berhasil disimpan otomatis!");
+            _loadBillingHistory();
+          }
+        } else {
+          developer.log('Monthly bill for $currentMonthYearKey already saved.',
+              name: 'BillingScreen');
+        }
+      } catch (e) {
+        developer.log('Error checking/auto-saving monthly bill: $e',
+            name: 'BillingScreen');
+        if (mounted) {
+          _showErrorSnackBar("Gagal menyimpan tagihan otomatis: $e");
+        }
+      }
+    } else {
+      developer.log('Not the last day of the month (${now.day}/$lastDayOfMonth). Skipping auto-save.',
+          name: 'BillingScreen');
+    }
+  }
+
+  Future<void> _saveBillingDataInternal(
+      String userId,
+      String node,
+      DateTime startDt,
+      DateTime endDt,
+      double mtrAwal,
+      double mtrAkhir,
+      double hargaCBM,
+      double usage,
+      double totalCost) async {
     try {
       String docId = DateFormat('yyyyMMdd_HHmmss_SSS').format(DateTime.now());
 
       await FirebaseFirestore.instance
           .collection('users')
-          .doc(user.uid)
+          .doc(userId)
           .collection('billing_records')
           .doc(docId)
           .set({
-        'startDate': Timestamp.fromDate(startDate!),
-        'endDate': Timestamp.fromDate(endDate!),
-        'meterAwal': meterAwal,
-        'meterAkhir': meterAkhir,
-        'hargaPerCBM': hargaPerCBM,
-        'usage': _currentUsage,
-        'totalCost': _currentTotalCost,
+        'startDate': Timestamp.fromDate(startDt),
+        'endDate': Timestamp.fromDate(endDt),
+        'meterAwal': mtrAwal,
+        'meterAkhir': mtrAkhir,
+        'hargaPerCBM': hargaCBM,
+        'usage': usage,
+        'totalCost': totalCost,
         'timestamp': FieldValue.serverTimestamp(),
         'docId': docId,
-        'nodeName': _activeNode,
+        'nodeName': node,
       });
 
-      if (mounted) {
-        _showSuccessSnackBar("Data tagihan berhasil disimpan!");
-        _loadBillingHistory();
-        // Reset state untuk tampilan tagihan saat ini setelah disimpan
-        _loadUserDataAndBilling(); 
-      }
+      final monthToSaveKey = DateFormat('yyyy-MM').format(endDt);
+      await _databaseRef.child(_lastDataPath).child(node).update({
+        monthToSaveKey: mtrAkhir,
+      });
+      developer.log('Saved meterAkhir ($mtrAkhir) to RTDB at $_lastDataPath/$node/$monthToSaveKey', name: 'BillingScreen');
+
     } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar("Gagal menyimpan data tagihan: $e");
-      }
       if (kDebugMode) {
-        print("Error saving billing data: $e");
+        print("Error saving billing data internally: $e");
       }
+      rethrow;
     }
   }
 
@@ -379,18 +437,22 @@ class _BillingScreenState extends State<BillingScreen> {
     }
 
     try {
+      final now = DateTime.now();
+      final startOfYear = DateTime(now.year, 1, 1);
+      final endOfYear = DateTime(now.year + 1, 1, 1);
+
       final querySnapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('billing_records')
+          .where('timestamp', isGreaterThanOrEqualTo: startOfYear)
+          .where('timestamp', isLessThan: endOfYear)
           .orderBy('timestamp', descending: true)
           .get();
 
       if (mounted) {
         setState(() {
-          _billingHistory = querySnapshot.docs
-              .map((doc) => doc.data())
-              .toList();
+          _billingHistory = querySnapshot.docs.map((doc) => doc.data()).toList();
         });
       }
     } catch (e) {
@@ -426,10 +488,6 @@ class _BillingScreenState extends State<BillingScreen> {
 
   void _showErrorSnackBar(String message) {
     _showSnackBar(message, Colors.red);
-  }
-
-  void _showInfoSnackBar(String message) {
-    _showSnackBar(message, Colors.orange);
   }
 
   Widget _buildDetailRow(String label, String value, {bool isLoading = false}) {
@@ -492,16 +550,15 @@ class _BillingScreenState extends State<BillingScreen> {
                       ),
                     ),
                     const Spacer(),
-                    // New placement for the history icon button
                     IconButton(
                       icon: Image.asset(
-                        'images/riwayat2.png', // Path gambar yang baru
-                        width: 28, // Ukuran ikon sesuai dengan ikon lain
+                        'images/riwayat2.png',
+                        width: 28,
                         height: 28,
-                        color: Colors.white, // Sesuaikan warna jika gambar berupa ikon satu warna
+                        color: Colors.white,
                         errorBuilder: (context, error, stackTrace) {
                           return const Icon(
-                            Icons.history, // Fallback icon jika gambar tidak ditemukan
+                            Icons.history,
                             color: Colors.white,
                             size: 28,
                           );
@@ -516,7 +573,7 @@ class _BillingScreenState extends State<BillingScreen> {
                     IconButton(
                       icon: const Icon(Icons.refresh, color: Colors.white, size: 28),
                       onPressed: () {
-                        _loadUserDataAndBilling(); // Refresh data tagihan saat ini
+                        _loadUserDataAndBilling();
                       },
                       tooltip: 'Refresh Data',
                     ),
@@ -562,27 +619,37 @@ class _BillingScreenState extends State<BillingScreen> {
                                 textAlign: TextAlign.center,
                               ),
                             ),
-                            const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
+                            const Divider(
+                                height: 30, thickness: 1.5, color: Color(0xFF17778F)),
                             _buildDetailRow("Nama", userName, isLoading: _isLoading),
                             _buildDetailRow("Node", nodeName, isLoading: _isLoading),
                             const SizedBox(height: 10),
                             _buildDetailRow(
                               "Tanggal Mulai",
-                              startDate == null ? "Memuat..." : DateFormat('dd MMMM y').format(startDate!),
+                              startDate == null
+                                  ? "Memuat..."
+                                  : DateFormat('dd MMMM y').format(startDate!),
                               isLoading: _isLoading,
                             ),
                             _buildDetailRow(
                               "Tanggal Akhir",
-                              endDate == null ? "Memuat..." : DateFormat('dd MMMM y').format(endDate!),
+                              endDate == null
+                                  ? "Memuat..."
+                                  : DateFormat('dd MMMM y').format(endDate!),
                               isLoading: _isLoading,
                             ),
                             const SizedBox(height: 10),
-                            _buildDetailRow("Meter Awal", "${meterAwal.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
-                            _buildDetailRow("Meter Akhir", "${meterAkhir.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
-                            _buildDetailRow("Pemakaian", "${_currentUsage.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
+                            _buildDetailRow("Meter Awal", "${meterAwal.toStringAsFixed(4)} m\u00B3",
+                                isLoading: _isLoading),
+                            _buildDetailRow("Meter Akhir", "${meterAkhir.toStringAsFixed(4)} m\u00B3",
+                                isLoading: _isLoading),
+                            _buildDetailRow(
+                                "Pemakaian", "${_currentUsage.toStringAsFixed(4)} m\u00B3",
+                                isLoading: _isLoading),
                             _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency(hargaPerCBM)}"),
                             const SizedBox(height: 10),
-                            const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
+                            const Divider(
+                                height: 30, thickness: 1.5, color: Color(0xFF17778F)),
                             Align(
                               alignment: Alignment.centerRight,
                               child: Row(
@@ -622,20 +689,6 @@ class _BillingScreenState extends State<BillingScreen> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 30),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 0.0),
-                        child: Column(
-                          children: [
-                            PrimaryStyledButton(
-                              onPressed: _saveBillingData,
-                              text: "SIMPAN DATA TAGIHAN",
-                              isLoading: _isLoading,
-                            ),
-                            // The "LIHAT RIWAYAT TAGIHAN" button and its SizedBox are removed from here
-                          ],
-                        ),
-                      ),
                       const SizedBox(height: 20),
                     ],
                   ),
@@ -651,6 +704,9 @@ class _BillingScreenState extends State<BillingScreen> {
   void _showBillingHistoryDateList(BuildContext context) {
     final Map<String, List<Map<String, dynamic>>> groupedHistory = {};
     for (var record in _billingHistory) {
+      final recordTimestamp = (record['timestamp'] as Timestamp?)?.toDate();
+      if (recordTimestamp == null) continue;
+
       final recordStartDate = (record['startDate'] as Timestamp).toDate();
       final dateKey = DateFormat('dd MMMM y').format(recordStartDate);
       if (!groupedHistory.containsKey(dateKey)) {
@@ -660,9 +716,11 @@ class _BillingScreenState extends State<BillingScreen> {
     }
 
     final sortedDates = groupedHistory.keys.toList()
-      ..sort((a, b) => DateFormat('dd MMMM y')
-          .parse(b)
-          .compareTo(DateFormat('dd MMMM y').parse(a)));
+      ..sort((a, b) {
+        final dateA = DateFormat('dd MMMM y').parse(a);
+        final dateB = DateFormat('dd MMMM y').parse(b);
+        return dateB.compareTo(dateA);
+      });
 
     showDialog(
       context: context,
@@ -673,43 +731,43 @@ class _BillingScreenState extends State<BillingScreen> {
           title: const Text("Riwayat Tagihan",
               style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
           content: _billingHistory.isEmpty
-              ? const Text("Belum ada riwayat tagihan.",
-              style: TextStyle(color: Colors.grey))
+              ? const Text("Belum ada riwayat tagihan untuk tahun ini.",
+                  style: TextStyle(color: Colors.grey))
               : SizedBox(
-            width: MediaQuery.of(context).size.width * 0.8,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: sortedDates.length,
-              itemBuilder: (context, dateIndex) {
-                final date = sortedDates[dateIndex];
-                final recordToDisplay = groupedHistory[date]!.first;
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8.0),
-                  elevation: 4,
-                  color: const Color(0xFFE0F2F7),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      _showBillingDetailDialog(context, recordToDisplay);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        "Periode Mulai: $date",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: Color(0xFF17778F),
+                  width: MediaQuery.of(context).size.width * 0.8,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: sortedDates.length,
+                    itemBuilder: (context, dateIndex) {
+                      final date = sortedDates[dateIndex];
+                      final recordToDisplay = groupedHistory[date]!.first;
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8.0),
+                        elevation: 4,
+                        color: const Color(0xFFE0F2F7),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        child: InkWell(
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            _showBillingDetailDialog(context, recordToDisplay);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Text(
+                              "Periode Mulai: $date",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: Color(0xFF17778F),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                );
-              },
-            ),
-          ),
+                ),
           actions: <Widget>[
             TextButton(
               child: const Text("Tutup", style: TextStyle(color: Color(0xFF17778F))),
@@ -743,9 +801,9 @@ class _BillingScreenState extends State<BillingScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildDetailRow("Meter Awal", "${(billingRecord['meterAwal'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
-                _buildDetailRow("Meter Akhir", "${(billingRecord['meterAkhir'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
-                _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
+                _buildDetailRow("Meter Awal", "${(billingRecord['meterAwal'] as num).toDouble().toStringAsFixed(4)} m\u00B3"),
+                _buildDetailRow("Meter Akhir", "${(billingRecord['meterAkhir'] as num).toDouble().toStringAsFixed(4)} m\u00B3"),
+                _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as num).toDouble().toStringAsFixed(4)} m\u00B3"),
                 _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency((billingRecord['hargaPerCBM'] as num).toDouble())}"),
                 const Divider(height: 15, thickness: 1, color: Colors.grey),
                 Align(

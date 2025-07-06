@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sigopal/provider/auth_provider.dart';
-import 'package:provider/provider.dart';
 
 class TextfieldNodeWidget extends StatelessWidget {
   final TextEditingController controller;
@@ -14,8 +12,6 @@ class TextfieldNodeWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var auth = Provider.of<AuthProvider>(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -39,18 +35,14 @@ class TextfieldNodeWidget extends StatelessWidget {
             if (value == null || value.trim().isEmpty) {
               return 'Node tidak boleh kosong';
             }
-            // Add additional validation for node format if needed
             if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(value.trim())) {
               return 'Node hanya boleh berisi huruf, angka, underscore, dan dash';
             }
             return null;
           },
-          onSaved: (value) {
-            auth.enteredNode = value!.trim();
-          },
           decoration: InputDecoration(
             hintText: "Masukkan Node...", 
-            hintStyle: TextStyle(color: textColor.withOpacity(0.6)),
+            hintStyle: TextStyle(color: textColor.withAlpha((textColor.alpha * 0.6).round())),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(15),
               borderSide: const BorderSide(color: Color(0xE617778F)), 

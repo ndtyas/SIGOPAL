@@ -67,9 +67,9 @@ class _ControllingScreenState extends State<ControllingScreen> {
     try {
       _databaseRef = FirebaseDatabase.instance.ref();
       developer.log('Firebase initialized successfully using default instance',
-          name: 'SupervisionScreen');
+          name: 'ControllingScreen');
     } catch (e) {
-      developer.log('Error initializing Firebase: $e', name: 'SupervisionScreen');
+      developer.log('Error initializing Firebase: $e', name: 'ControllingScreen');
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _showErrorDialog('Gagal menginisialisasi Firebase: $e');
@@ -78,21 +78,58 @@ class _ControllingScreenState extends State<ControllingScreen> {
     }
   }
 
+  // Helper function to safely convert dynamic value to double
+  double _convertToDouble(dynamic value) {
+    if (value == null) {
+      return 0.0;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  // Helper function to safely convert dynamic value to boolean
+  bool _convertToBool(dynamic value) {
+    if (value == null) {
+      return false; 
+    }
+    if (value is bool) {
+      return value;
+    }
+    if (value is int) {
+      return value != 0;
+    }
+    if (value is String) {
+      final lowerCaseValue = value.toLowerCase();
+      if (lowerCaseValue == 'true' || lowerCaseValue == '1' || lowerCaseValue == 'open') {
+        return true;
+      }
+      if (lowerCaseValue == 'false' || lowerCaseValue == '0' || lowerCaseValue == 'closed') {
+        return false;
+      }
+    }
+    return false;
+  }
+
   Future<void> _fetchControlData() async {
     if (!mounted || _activeNode == null) return;
 
     setState(() {
       _isLoading = true;
-      _debitAirValue = '...'; // Set to loading indicator
-      _teganganValue = '...'; // Set to loading indicator
-      _arusValue = '...'; // Set to loading indicator
+      _debitAirValue = '...';
+      _teganganValue = '...';
+      _arusValue = '...';
     });
 
     try {
       _dataSubscription?.cancel();
 
       final nodeDataPath = '$_lastDataPath/$_activeNode';
-      developer.log('Fetching control data from: $nodeDataPath', name: 'SupervisionScreen');
+      developer.log('Fetching control data from: $nodeDataPath', name: 'ControllingScreen');
 
       _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
@@ -101,56 +138,64 @@ class _ControllingScreenState extends State<ControllingScreen> {
               final data = event.snapshot.value as Map<dynamic, dynamic>?;
               if (data != null) {
                 setState(() {
-                  _teganganValue = _formatValue(data['tegangan'], 0);
-                  _arusValue = _formatValue(data['arus'], 1);
-                  _debitAirValue = _formatValue(data['debit_air'], 1);
-                  valveOpen = data['valve_open'] as bool? ?? false;
+                  // Use _formatValue which now incorporates _convertToDouble
+                  _teganganValue = _formatValue(data['tegangan'], 2); // 2 decimal places for voltage
+                  _arusValue = _formatValue(data['arus'], 2);
+                  _debitAirValue = _formatValue(data['debit_air'], 2);
+                  
+                  // Use _convertToBool for valveOpen
+                  valveOpen = _convertToBool(data['valve_open']);
                   _isLoading = false;
                 });
               } else {
-                _setDefaultValuesToLoading(); // Set to loading indicators if data is null but snapshot exists
+                _setDefaultValuesToLoading();
+                developer.log('Data is null for node: $_activeNode', name: 'ControllingScreen');
               }
             } else {
-              _setDefaultValuesToLoading(); // Set to loading indicators if snapshot does not exist
+              _setDefaultValuesToLoading();
+              developer.log('Snapshot does not exist or value is null for node: $_activeNode', name: 'ControllingScreen');
             }
           }
         },
         onError: (error) {
           if (mounted) {
             developer.log('Error fetching control data: $error',
-                name: 'SupervisionScreen');
+                name: 'ControllingScreen');
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
                 _showErrorDialog('Error mengambil data pengawasan: $error');
               }
             });
-            _setDefaultValuesToLoading(); // Set to loading indicators on error
+            _setDefaultValuesToLoading();
           }
         },
       );
     } catch (e) {
       if (mounted) {
         developer.log('Error initiating control data fetch: $e',
-            name: 'SupervisionScreen');
+            name: 'ControllingScreen');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             _showErrorDialog('Error inisialisasi data pengawasan: $e');
           }
         });
-        _setDefaultValuesToLoading(); // Set to loading indicators on exception
+        _setDefaultValuesToLoading();
       }
     }
   }
 
+  // Refined _formatValue to use _convertToDouble for robust parsing
   String _formatValue(dynamic value, int decimalPlaces) {
-    if (value == null) return '...'; // Return loading indicator for null values
-
-    try {
-      double numValue = double.parse(value.toString());
-      return numValue.toStringAsFixed(decimalPlaces);
-    } catch (e) {
-      return '...'; // Return loading indicator if parsing fails
+    if (value == null) return '...';
+    
+    // Safely convert to double first
+    double numValue = _convertToDouble(value);
+    
+    // Check if the value is essentially an integer
+    if (decimalPlaces == 0 || numValue == numValue.toInt()) {
+      return numValue.toInt().toString();
     }
+    return numValue.toStringAsFixed(decimalPlaces);
   }
 
   void _setDefaultValuesToLoading() {
@@ -158,8 +203,8 @@ class _ControllingScreenState extends State<ControllingScreen> {
       _teganganValue = '...';
       _arusValue = '...';
       _debitAirValue = '...';
-      valveOpen = false; // Valve status might default to closed or unknown
-      _isLoading = true; // Still loading if data is not available
+      valveOpen = false;
+      _isLoading = true;
     });
   }
 
@@ -230,7 +275,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
           children: [
             Icon(icon, size: 30, color: const Color(0xFF17778F)),
             const SizedBox(height: 10),
-            // Display CircularProgressIndicator if value is '...' (our loading indicator)
             value == '...'
                 ? const SizedBox(
                     width: 20,
@@ -349,7 +393,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
-                              // Display '...' if still loading or no data, otherwise display status
                               _isLoading && _debitAirValue == '...'
                                   ? 'Memuat...'
                                   : 'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
@@ -379,7 +422,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  // Show CircularProgressIndicator for the main status if loading
                                   _isLoading && _debitAirValue == '...'
                                       ? const SizedBox(
                                           width: 40,
@@ -395,7 +437,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
                                           size: 40,
                                         ),
                                   const SizedBox(height: 8),
-                                  // Show 'Memuat...' for the main status text if loading
                                   Text(
                                     _isLoading && _debitAirValue == '...'
                                         ? "Memuat..."

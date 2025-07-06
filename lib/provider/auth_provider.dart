@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:developer' as developer;
 
 final _fireAuth = FirebaseAuth.instance;
 final _fireStore = FirebaseFirestore.instance;
@@ -15,7 +16,6 @@ class AuthProvider extends ChangeNotifier {
   String enteredEmail = '';
   String enteredPassword = '';
   String enteredUsername = '';
-  String enteredNode = ''; 
 
   bool _showTopError = false;
   String _topErrorMessage = '';
@@ -23,13 +23,26 @@ class AuthProvider extends ChangeNotifier {
   bool _rememberMe = false;
   late SharedPreferences _prefs;
 
+  String? _currentNodeId;
+  bool _isLoading = false;
+
   AuthProvider() {
     _initPrefs();
+    _fireAuth.authStateChanges().listen((user) {
+      if (user != null) {
+        initializeUserNode(); 
+      } else {
+        _currentNodeId = null;
+        notifyListeners();
+      }
+    });
   }
 
   bool get showTopError => _showTopError;
   String get topErrorMessage => _topErrorMessage;
   bool get rememberMe => _rememberMe;
+  bool get isLoading => _isLoading;
+  String? getCurrentNode() => _currentNodeId;
 
   Future<void> _initPrefs() async {
     _prefs = await SharedPreferences.getInstance();
@@ -62,6 +75,7 @@ class AuthProvider extends ChangeNotifier {
         enteredPassword = savedPassword;
       }
     }
+    notifyListeners();
   }
 
   Future<void> clearSavedCredentials() async {
@@ -86,15 +100,22 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _setLoading(bool value) {
+    _isLoading = value;
+    notifyListeners();
+  }
+
   Future<void> submit({
     required Function onSuccess,
     required Function(String message) onError,
   }) async {
+    _setLoading(true);
     FocusManager.instance.primaryFocus?.unfocus();
 
     final isValid = form.currentState?.validate() ?? false;
     if (!isValid) {
       setTopError('Masukkan email dan password yang valid.');
+      _setLoading(false);
       return;
     }
 
@@ -140,6 +161,8 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       setTopError('Terjadi kesalahan tidak diketahui: $e');
       onError('Terjadi kesalahan tidak diketahui: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
@@ -147,11 +170,13 @@ class AuthProvider extends ChangeNotifier {
     required Function(String message) onError,
     required Function onSuccess,
   }) async {
+    _setLoading(true);
     FocusManager.instance.primaryFocus?.unfocus();
 
     final isValid = form.currentState?.validate() ?? false;
     if (!isValid) {
       setTopError('Harap lengkapi semua bidang yang diperlukan dengan benar.');
+      _setLoading(false);
       return;
     }
 
@@ -199,34 +224,39 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       setTopError('Terjadi kesalahan tidak diketahui: $e');
       onError('Terjadi kesalahan tidak diketahui: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
-  Future<void> verifyNodeExistInRealtimeDb({
+  Future<void> verifyNodeAndSaveToFirestore({
     required String node,
-    required Function onSuccess,
+    required VoidCallback onSuccess,
     required Function(String message) onError,
   }) async {
+    _setLoading(true);
     FocusManager.instance.primaryFocus?.unfocus();
+    clearTopError();
 
     if (node.trim().isEmpty) {
       setTopError('Node tidak boleh kosong.');
       onError(topErrorMessage);
+      _setLoading(false);
       return;
     }
 
     if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(node.trim())) {
       setTopError('Node hanya boleh berisi huruf, angka, underscore, dan dash');
       onError(topErrorMessage);
+      _setLoading(false);
       return;
     }
 
-    clearTopError();
-
     final user = _fireAuth.currentUser;
     if (user == null) {
-      setTopError('Tidak ada pengguna yang masuk.');
+      setTopError('Tidak ada pengguna yang masuk. Harap login kembali.');
       onError(topErrorMessage);
+      _setLoading(false);
       return;
     }
 
@@ -234,13 +264,23 @@ class AuthProvider extends ChangeNotifier {
       final nodeRef = _fireRealtimeDb.ref('last_data').child(node);
       final snapshot = await nodeRef.get();
 
-      if (snapshot.exists && snapshot.value != null) {
-        enteredNode = node; 
-        onSuccess();
-      } else {
+      if (!snapshot.exists || snapshot.value == null) {
         setTopError('Node "$node" tidak ditemukan di database atau tidak memiliki data.');
         onError(topErrorMessage);
+        return;
       }
+      
+      // Simpan node_id ke dokumen pengguna di Firestore
+      await _fireStore.collection('users').doc(user.uid).set(
+        {'node_id': node},
+        SetOptions(merge: true),
+      );
+
+      // Simpan node_id ke state AuthProvider
+      _currentNodeId = node;
+      notifyListeners();
+
+      onSuccess();
     } on FirebaseException catch (e) {
       String errorMessage = 'Terjadi kesalahan saat memverifikasi node.';
       if (e.code == 'permission-denied') {
@@ -253,18 +293,39 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       setTopError('Terjadi kesalahan tidak diketahui: $e');
       onError('Terjadi kesalahan tidak diketahui: $e');
+    } finally {
+      _setLoading(false);
     }
   }
 
-  String? getCurrentNode() {
-    return enteredNode.isNotEmpty ? enteredNode : null;
+  // --- Initialize User Node (read from Firestore) ---
+  Future<void> initializeUserNode() async {
+    final user = _fireAuth.currentUser;
+    if (user != null) {
+      try {
+        final userDoc = await _fireStore.collection('users').doc(user.uid).get();
+        if (userDoc.exists && userDoc.data() != null) {
+          _currentNodeId = userDoc.data()!['node_id'] as String?;
+          developer.log('Node ID initialized from Firestore: $_currentNodeId', name: 'AuthProvider');
+        } else {
+          _currentNodeId = null;
+          developer.log('User document or node_id not found for ${user.uid} in Firestore.', name: 'AuthProvider');
+        }
+      } catch (e) {
+        developer.log('Error initializing user node from Firestore: $e', name: 'AuthProvider');
+        _currentNodeId = null;
+      }
+    } else {
+      _currentNodeId = null;
+    }
+    notifyListeners();
   }
 
   Future<void> resendVerification({
     required Function(String message) onFeedback,
   }) async {
+    _setLoading(true);
     FocusManager.instance.primaryFocus?.unfocus();
-
     clearTopError();
 
     try {
@@ -310,13 +371,25 @@ class AuthProvider extends ChangeNotifier {
     } catch (e) {
       setTopError('Terjadi kesalahan tidak diketahui: $e');
       onFeedback("Terjadi kesalahan tidak diketahui saat mengirim ulang verifikasi: $e");
+    } finally {
+      _setLoading(false);
     }
   }
 
   Future<void> signOut() async {
-    await _fireAuth.signOut();
-    await clearSavedCredentials();
-    enteredNode = '';
-    notifyListeners();
+    _setLoading(true);
+    try {
+      await _fireAuth.signOut();
+      await clearSavedCredentials();
+      _currentNodeId = null;
+      enteredEmail = '';
+      enteredPassword = '';
+    } catch (e) {
+      developer.log('Error during sign out: $e', name: 'AuthProvider');
+      setTopError("Gagal keluar: $e");
+    } finally {
+      _setLoading(false);
+      notifyListeners();
+    }
   }
 }

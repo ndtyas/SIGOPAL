@@ -3,7 +3,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:provider/provider.dart';
-import 'package:sigopal/provider/auth_provider.dart'; 
+import 'package:sigopal/provider/auth_provider.dart';
 
 class VolumePage extends StatefulWidget {
   const VolumePage({super.key});
@@ -36,7 +36,6 @@ class _VolumePageState extends State<VolumePage> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final auth = Provider.of<AuthProvider>(context, listen: false);
-    // Mendapatkan node terbaru dari AuthProvider
     final newNode = auth.getCurrentNode();
 
     // Log untuk debugging: melihat nilai newNode dan _activeNode saat ini
@@ -105,39 +104,43 @@ class _VolumePageState extends State<VolumePage> {
       _dataSubscription?.cancel();
 
       // Membangun jalur ke data di Firebase Realtime Database
-      // Contoh: 'last_data/NodeSensor'
       final nodeDataPath = '$_lastDataPath/$_activeNode';
       developer.log('Attempting to fetch data from Firebase path: $nodeDataPath', name: 'VolumePage');
 
       // Mendengarkan perubahan data secara real-time
       _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
-          if (mounted) { // Pastikan widget masih aktif
+          if (mounted) {
             if (event.snapshot.exists && event.snapshot.value != null) {
               final data = event.snapshot.value as Map<dynamic, dynamic>?;
               developer.log('Successfully received data for path $nodeDataPath: $data', name: 'VolumePage');
 
               double? level;
-              // Memeriksa jika 'tinggi_cm' ada dan mencoba mengkonversinya ke double
               if (data != null && data['tinggi_cm'] != null) {
                 try {
-                  // Menggunakan 'num' untuk penanganan yang lebih fleksibel (int atau double)
-                  level = (data['tinggi_cm'] as num).toDouble();
-                  developer.log('Found and parsed "tinggi_cm": $level', name: 'VolumePage');
+                  String? rawValue = data['tinggi_cm']?.toString();
+                  if (rawValue != null) {
+                    level = double.tryParse(rawValue);
+                    if (level == null) {
+                      developer.log('Failed to parse "tinggi_cm" string "$rawValue" to double.', name: 'VolumePage');
+                    }
+                  } else {
+                    developer.log('Raw value for "tinggi_cm" is null after toString().', name: 'VolumePage');
+                  }
+
                 } catch (e) {
                   developer.log('Error parsing "tinggi_cm" to double: $e. Raw value: ${data['tinggi_cm']}', name: 'VolumePage');
-                  level = null; // Set level to null if parsing fails
+                  level = null; 
                 }
               } else {
                 developer.log('Key "tinggi_cm" not found or its value is null in received data at path: $nodeDataPath', name: 'VolumePage');
               }
 
               if (level != null) {
-                // Perbarui state dengan data yang berhasil diambil
                 setState(() {
                   _currentWaterLevel = level!;
                   _hasData = true;
-                  _updateWaterLevelCategory(); // Perbarui kategori berdasarkan level baru
+                  _updateWaterLevelCategory();
                   _isLoading = false;
                 });
                 developer.log(
@@ -189,7 +192,6 @@ class _VolumePageState extends State<VolumePage> {
         },
       );
     } catch (e) {
-      // Tangani exception jika terjadi kesalahan di luar stream Firebase
       if (mounted) {
         developer.log('Exception caught during data fetch initiation for path $_lastDataPath/$_activeNode: $e', name: 'VolumePage');
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -212,16 +214,16 @@ class _VolumePageState extends State<VolumePage> {
   void _updateWaterLevelCategory() {
     if (_currentWaterLevel >= 201 && _currentWaterLevel <= 300) {
       _waterLevelCategory = 'FULL';
-      _statusColor = const Color(0xFF17778F); // Warna untuk FULL
+      _statusColor = const Color(0xFF17778F); 
     } else if (_currentWaterLevel >= 101 && _currentWaterLevel <= 200) {
       _waterLevelCategory = 'MEDIUM';
-      _statusColor = Colors.orange; // Warna untuk MEDIUM
+      _statusColor = Colors.orange;
     } else if (_currentWaterLevel >= 0 && _currentWaterLevel <= 100) {
       _waterLevelCategory = 'LOW';
-      _statusColor = Colors.red; // Warna untuk LOW
+      _statusColor = Colors.red; 
     } else {
       _waterLevelCategory = 'UNKNOWN';
-      _statusColor = Colors.grey; // Warna default
+      _statusColor = Colors.grey; 
     }
   }
 
@@ -291,7 +293,7 @@ class _VolumePageState extends State<VolumePage> {
                   Row(
                     children: [
                       Image.asset(
-                        'images/logoPutih.png', // Pastikan aset ini ada
+                        'images/logoPutih.png',
                         width: screenWidth * 0.09,
                         height: screenWidth * 0.09,
                         errorBuilder: (context, error, stackTrace) {
@@ -488,8 +490,7 @@ class _VolumePageState extends State<VolumePage> {
           child: Text(
             statusText,
             style: TextStyle(
-              fontSize: isSmallScreen ? 16 : 18,
-              fontWeight: FontWeight.bold,
+              fontSize: isSmallScreen ? 25 : 30,
               color: _statusColor,
             ),
             overflow: TextOverflow.ellipsis,

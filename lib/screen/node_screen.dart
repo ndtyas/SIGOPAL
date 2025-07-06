@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:sigopal/widget/textfield/textfield_node_widget.dart';
 
 class NodeScreen extends StatefulWidget {
@@ -17,6 +17,20 @@ class _NodeScreenState extends State<NodeScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async { 
+      if (!mounted) return; 
+      final auth = Provider.of<AuthProvider>(context, listen: false);
+      await auth.initializeUserNode(); 
+
+      if (!mounted) return;
+
+      // Setelah initializeUserNode selesai, cek apakah node sudah ada
+      if (auth.getCurrentNode() != null && auth.getCurrentNode()!.isNotEmpty) {
+        // Jika node sudah ada, isi controller dan langsung navigasi ke home
+        nodeController.text = auth.getCurrentNode()!;
+        Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+      }
+    });
   }
 
   @override
@@ -25,7 +39,7 @@ class _NodeScreenState extends State<NodeScreen> {
     super.dispose();
   }
 
-  void _verifyAndNavigateToHome() async {
+  void _verifyAndSaveNode() async {
     FocusScope.of(context).unfocus();
     final auth = Provider.of<AuthProvider>(context, listen: false);
 
@@ -34,15 +48,14 @@ class _NodeScreenState extends State<NodeScreen> {
       return;
     }
 
-    _formKey.currentState!.save();
     auth.clearTopError();
 
-    await auth.verifyNodeExistInRealtimeDb(
-      node: nodeController.text.trim(),
+    await auth.verifyNodeAndSaveToFirestore(
+      node: nodeController.text.trim(), 
       onSuccess: () {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Node berhasil diverifikasi!')),
+          const SnackBar(content: Text('Node berhasil diverifikasi dan disimpan!')),
         );
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       },
@@ -94,7 +107,7 @@ class _NodeScreenState extends State<NodeScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      auth.topErrorMessage,
+                      auth.topErrorMessage, 
                       style: const TextStyle(color: Colors.red),
                       textAlign: TextAlign.center,
                     ),
@@ -127,7 +140,7 @@ class _NodeScreenState extends State<NodeScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _verifyAndNavigateToHome,
+                            onPressed: auth.isLoading ? null : _verifyAndSaveNode,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF62C3D0),
                               foregroundColor: Colors.white,
@@ -136,16 +149,26 @@ class _NodeScreenState extends State<NodeScreen> {
                               ),
                               padding: const EdgeInsets.symmetric(vertical: 12),
                             ),
-                            child: const Text(
-                              'Masuk',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                            ),
+                            child: auth.isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 3,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Masuk',
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  ),
                           ),
                         ),
                         const SizedBox(height: 10),
                         TextButton(
-                          onPressed: () {
+                          onPressed: auth.isLoading ? null : () {
                             auth.signOut();
+                            if (!mounted) return;
                             Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
                           },
                           child: const Text(
