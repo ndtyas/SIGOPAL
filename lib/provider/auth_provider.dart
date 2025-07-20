@@ -1,30 +1,46 @@
+import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sigopal/notification_service.dart';
 import 'dart:developer' as developer;
 
-final _fireAuth = FirebaseAuth.instance;
-final _fireStore = FirebaseFirestore.instance;
-final _fireRealtimeDb = FirebaseDatabase.instance;
-
 class AuthProvider extends ChangeNotifier {
-  final form = GlobalKey<FormState>();
+  // Firebase services
+  final FirebaseAuth _fireAuth = FirebaseAuth.instance;
+  final FirebaseFirestore _fireStore = FirebaseFirestore.instance;
+  final FirebaseDatabase _fireRealtimeDb = FirebaseDatabase.instance;
 
+  // State untuk form dan UI
+  final form = GlobalKey<FormState>();
   bool islogin = true;
   String enteredEmail = '';
   String enteredPassword = '';
   String enteredUsername = '';
-
+  bool _isLoading = false;
+  
+  // State untuk error message
   bool _showTopError = false;
   String _topErrorMessage = '';
 
+  // State untuk "Remember Me"
   bool _rememberMe = false;
   late SharedPreferences _prefs;
-
+  
+  // State untuk Node dan Notifikasi
   String? _currentNodeId;
-  bool _isLoading = false;
+  StreamSubscription<DatabaseEvent>? _statusSubscription;
+  String? _inAppNotificationMessage;
+
+  // Getters
+  bool get showTopError => _showTopError;
+  String get topErrorMessage => _topErrorMessage;
+  bool get rememberMe => _rememberMe;
+  bool get isLoading => _isLoading;
+  String? getCurrentNode() => _currentNodeId;
+  String? get inAppNotificationMessage => _inAppNotificationMessage;
 
   AuthProvider() {
     _initPrefs();
@@ -32,17 +48,40 @@ class AuthProvider extends ChangeNotifier {
       if (user != null) {
         initializeUserNode(); 
       } else {
+        // User logout
         _currentNodeId = null;
+        _stopNodeStatusListener();
         notifyListeners();
       }
     });
   }
 
-  bool get showTopError => _showTopError;
-  String get topErrorMessage => _topErrorMessage;
-  bool get rememberMe => _rememberMe;
-  bool get isLoading => _isLoading;
-  String? getCurrentNode() => _currentNodeId;
+  void startNodeStatusListener(String nodeName) {
+    _stopNodeStatusListener();
+
+    final dbRef = _fireRealtimeDb.ref('last_data/$nodeName/status');
+    _statusSubscription = dbRef.onValue.listen((event) {
+      final status = event.snapshot.value;
+      if (status == 0 || status == '0') {
+        NotificationService.showNotification(
+          title: '⚠️ Peringatan Node',
+          body: 'Koneksi node "$nodeName" terputus. Mohon segera dicek!',
+        );
+        
+        _inAppNotificationMessage = 'Koneksi node "$nodeName" terputus!';
+        notifyListeners();
+      }
+    });
+  }
+  
+  void _stopNodeStatusListener() {
+    _statusSubscription?.cancel();
+    _statusSubscription = null;
+  }
+
+  void clearInAppNotification() {
+    _inAppNotificationMessage = null;
+  }
 
   Future<void> _initPrefs() async {
     _prefs = await SharedPreferences.getInstance();
@@ -66,14 +105,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> _loadSavedCredentials() async {
-    _rememberMe = _prefs.getBool('remember_me') ?? false;
-    if (_rememberMe) {
-      final savedEmail = _prefs.getString('saved_email');
-      final savedPassword = _prefs.getString('saved_password');
-      if (savedEmail != null && savedPassword != null) {
-        enteredEmail = savedEmail;
-        enteredPassword = savedPassword;
-      }
+    if (_prefs.getBool('remember_me') ?? false) {
+      enteredEmail = _prefs.getString('saved_email') ?? '';
+      enteredPassword = _prefs.getString('saved_password') ?? '';
     }
     notifyListeners();
   }
@@ -147,7 +181,7 @@ class AuthProvider extends ChangeNotifier {
       onSuccess(); 
     } on FirebaseAuthException catch (e) {
       String errorMessage = 'Terjadi kesalahan saat masuk.';
-      if (e.code == 'user-not-found' || e.code == 'wrong-password') {
+      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
         errorMessage = 'Email atau password salah.';
       } else if (e.code == 'invalid-email') {
         errorMessage = 'Format email tidak valid.';
@@ -245,13 +279,6 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(node.trim())) {
-      setTopError('Node hanya boleh berisi huruf, angka, underscore, dan dash');
-      onError(topErrorMessage);
-      _setLoading(false);
-      return;
-    }
-
     final user = _fireAuth.currentUser;
     if (user == null) {
       setTopError('Tidak ada pengguna yang masuk. Harap login kembali.');
@@ -265,40 +292,28 @@ class AuthProvider extends ChangeNotifier {
       final snapshot = await nodeRef.get();
 
       if (!snapshot.exists || snapshot.value == null) {
-        setTopError('Node "$node" tidak ditemukan di database atau tidak memiliki data.');
+        setTopError('Node "$node" tidak ditemukan di database.');
         onError(topErrorMessage);
         return;
       }
       
-      // Simpan node_id ke dokumen pengguna di Firestore
       await _fireStore.collection('users').doc(user.uid).set(
         {'node_id': node},
         SetOptions(merge: true),
       );
 
-      // Simpan node_id ke state AuthProvider
       _currentNodeId = node;
+      startNodeStatusListener(node);
       notifyListeners();
-
       onSuccess();
-    } on FirebaseException catch (e) {
-      String errorMessage = 'Terjadi kesalahan saat memverifikasi node.';
-      if (e.code == 'permission-denied') {
-        errorMessage = 'Akses ditolak ke Realtime Database. Pastikan Anda memiliki izin.';
-      } else if (e.code == 'network-request-failed') {
-        errorMessage = 'Tidak ada koneksi internet. Silakan coba lagi.';
-      }
-      setTopError(errorMessage);
-      onError(errorMessage);
     } catch (e) {
-      setTopError('Terjadi kesalahan tidak diketahui: $e');
-      onError('Terjadi kesalahan tidak diketahui: $e');
+      setTopError('Terjadi kesalahan: $e');
+      onError('Terjadi kesalahan: $e');
     } finally {
       _setLoading(false);
     }
   }
 
-  // --- Initialize User Node (read from Firestore) ---
   Future<void> initializeUserNode() async {
     final user = _fireAuth.currentUser;
     if (user != null) {
@@ -306,17 +321,13 @@ class AuthProvider extends ChangeNotifier {
         final userDoc = await _fireStore.collection('users').doc(user.uid).get();
         if (userDoc.exists && userDoc.data() != null) {
           _currentNodeId = userDoc.data()!['node_id'] as String?;
-          developer.log('Node ID initialized from Firestore: $_currentNodeId', name: 'AuthProvider');
-        } else {
-          _currentNodeId = null;
-          developer.log('User document or node_id not found for ${user.uid} in Firestore.', name: 'AuthProvider');
+          if (_currentNodeId != null && _currentNodeId!.isNotEmpty) {
+            startNodeStatusListener(_currentNodeId!);
+          }
         }
       } catch (e) {
-        developer.log('Error initializing user node from Firestore: $e', name: 'AuthProvider');
-        _currentNodeId = null;
+        developer.log('Error initializing user node: $e', name: 'AuthProvider');
       }
-    } else {
-      _currentNodeId = null;
     }
     notifyListeners();
   }
@@ -355,22 +366,15 @@ class AuthProvider extends ChangeNotifier {
       }
     } on FirebaseAuthException catch (e) {
       String feedbackMessage = "Gagal mengirim ulang verifikasi: ";
-      if (e.code == 'user-not-found' || e.code == 'wrong-password') {
+      if (e.code == 'user-not-found' || e.code == 'wrong-password' || e.code == 'invalid-credential') {
         feedbackMessage += 'Email atau password salah.';
-      } else if (e.code == 'invalid-email') {
-        feedbackMessage += 'Format email tidak valid.';
-      } else if (e.code == 'too-many-requests') {
-        feedbackMessage += 'Terlalu banyak percobaan. Coba lagi nanti.';
-      } else if (e.code == 'network-request-failed') {
-        feedbackMessage += 'Tidak ada koneksi internet. Silakan coba lagi.';
       } else {
         feedbackMessage += e.message ?? 'Terjadi kesalahan.';
       }
       setTopError(feedbackMessage);
       onFeedback(feedbackMessage);
     } catch (e) {
-      setTopError('Terjadi kesalahan tidak diketahui: $e');
-      onFeedback("Terjadi kesalahan tidak diketahui saat mengirim ulang verifikasi: $e");
+      onFeedback("Terjadi kesalahan tidak diketahui: $e");
     } finally {
       _setLoading(false);
     }
@@ -384,9 +388,9 @@ class AuthProvider extends ChangeNotifier {
       _currentNodeId = null;
       enteredEmail = '';
       enteredPassword = '';
+      _stopNodeStatusListener();
     } catch (e) {
       developer.log('Error during sign out: $e', name: 'AuthProvider');
-      setTopError("Gagal keluar: $e");
     } finally {
       _setLoading(false);
       notifyListeners();

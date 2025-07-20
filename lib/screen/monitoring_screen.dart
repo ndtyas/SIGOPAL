@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:provider/provider.dart';
@@ -17,6 +18,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
 
   String _tdsValue = 'N/A';
   String _phValue = 'N/A';
+  String _debitAirValue = '...';
   bool _isLoading = true;
 
   late DatabaseReference _databaseRef;
@@ -44,6 +46,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         setState(() {
           _tdsValue = 'N/A';
           _phValue = 'N/A';
+          _debitAirValue = '...';
           _isLoading = false;
         });
         _showErrorDialog('Node belum dipilih atau tidak valid.');
@@ -66,18 +69,50 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     }
   }
 
+  double _convertToDouble(dynamic value) {
+    if (value == null) {
+      return 0.0;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+    return 0.0;
+  }
+
+  String _formatValue(dynamic value, int decimalPlaces) {
+    if (value == null) return '...';
+    
+    double numValue = _convertToDouble(value);
+    
+    if (decimalPlaces == 0 || numValue == numValue.toInt()) {
+      return numValue.toInt().toString();
+    }
+    return numValue.toStringAsFixed(decimalPlaces);
+  }
+
   Future<void> _fetchWaterQualityData() async {
     if (_activeNode == null) {
       setState(() {
         _isLoading = false;
         _tdsValue = 'N/A';
         _phValue = 'N/A';
+        _debitAirValue = '...';
       });
       return;
     }
 
+    setState(() {
+      _isLoading = true;
+      _tdsValue = 'N/A';
+      _phValue = 'N/A';
+      _debitAirValue = '...';
+    });
+
     try {
-      _dataSubscription?.cancel();
+      await _dataSubscription?.cancel();
 
       final nodeDataPath = '$_lastDataPath/$_activeNode';
       developer.log('Fetching data from: $nodeDataPath', name: 'MonitoringScreen');
@@ -85,29 +120,22 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
       _dataSubscription = _databaseRef.child(nodeDataPath).onValue.listen(
         (event) {
           if (mounted) {
-            if (event.snapshot.exists) {
+            if (event.snapshot.exists && event.snapshot.value != null) {
               final data = event.snapshot.value as Map<dynamic, dynamic>?;
               if (data != null) {
                 setState(() {
                   _tdsValue = data['tds']?.toString() ?? 'N/A';
                   _phValue = data['ph']?.toString() ?? 'N/A';
+                  _debitAirValue = _formatValue(data['debit_air'], 2);
                   _isLoading = false;
                 });
-                developer.log('Data updated - TDS: $_tdsValue, pH: $_phValue', name: 'MonitoringScreen');
+                developer.log('Data updated - TDS: $_tdsValue, pH: $_phValue, Debit Air: $_debitAirValue', name: 'MonitoringScreen');
               } else {
-                setState(() {
-                  _tdsValue = 'N/A';
-                  _phValue = 'N/A';
-                  _isLoading = false;
-                });
+                _setDefaultValues();
                 developer.log('Data is null at path: $nodeDataPath', name: 'MonitoringScreen');
               }
             } else {
-              setState(() {
-                _tdsValue = 'N/A';
-                _phValue = 'N/A';
-                _isLoading = false;
-              });
+              _setDefaultValues();
               developer.log('No data exists at path: $nodeDataPath', name: 'MonitoringScreen');
               _showErrorDialog('Tidak ada data untuk node ini.');
             }
@@ -116,10 +144,12 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         onError: (error) {
           if (mounted) {
             developer.log('Error fetching data: $error', name: 'MonitoringScreen');
-            _showErrorDialog('Error fetching data: $error');
-            setState(() {
-              _isLoading = false;
-            });
+            if (error is FirebaseException && error.code == 'permission-denied') {
+              developer.log("Permission denied, likely due to logout. Ignoring dialog.", name: "MonitoringScreen");
+            } else {
+              _showErrorDialog('Error fetching data: $error');
+            }
+            _setDefaultValues();
           }
         },
       );
@@ -127,11 +157,18 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
       if (mounted) {
         developer.log('Error initializing data fetch: $e', name: 'MonitoringScreen');
         _showErrorDialog('Error initializing data fetch: $e');
-        setState(() {
-          _isLoading = false;
-        });
+        _setDefaultValues();
       }
     }
+  }
+
+  void _setDefaultValues() {
+    setState(() {
+      _tdsValue = 'N/A';
+      _phValue = 'N/A';
+      _debitAirValue = '...';
+      _isLoading = false;
+    });
   }
 
   void _showErrorDialog(String message) {
@@ -156,12 +193,21 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   void _logout(BuildContext context) async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
+      // 1. Batalkan listener data terlebih dahulu
+      await _dataSubscription?.cancel();
+      developer.log('Data subscription cancelled before logout.', name: 'MonitoringScreen');
+
+      // 2. Baru lakukan proses logout
       await auth.signOut();
+
+      // 3. Pindah halaman setelah semua beres
       if (context.mounted) {
         Navigator.pushReplacementNamed(context, '/checkauth');
       }
     } catch (e) {
-      _showErrorDialog('Error during logout: $e');
+      if (mounted) {
+         _showErrorDialog('Error during logout: $e');
+      }
     }
   }
 
@@ -196,10 +242,10 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
             height: 50,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
-              return Icon(
+              return const Icon(
                 Icons.image_not_supported,
                 size: 50,
-                color: const Color(0xB3FFFFFF),
+                color: Color(0xB3FFFFFF),
               );
             },
           ),
@@ -236,6 +282,82 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     );
   }
 
+  Widget _debitAirBox() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xE617778F),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0x42000000),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Icon(
+            Icons.water_drop,
+            size: 60,
+            color: Color(0xB3FFFFFF),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  "Debit Air",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text(
+                      "Flow Rate: ",
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    (_isLoading || _debitAirValue == '...')
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            "$_debitAirValue L/min",
+                            style: const TextStyle(
+                              fontSize: 18,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _sniBox() {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 12),
@@ -261,10 +383,10 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
             height: 60,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
-              return Icon(
+              return const Icon(
                 Icons.verified,
                 size: 60,
-                color: const Color(0xB3FFFFFF),
+                color: Color(0xB3FFFFFF),
               );
             },
           ),
@@ -364,6 +486,8 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _debitAirBox(),
+                    const SizedBox(height: 15),
                     GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),

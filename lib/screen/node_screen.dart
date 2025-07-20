@@ -1,7 +1,10 @@
+import 'dart:async';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
-import 'package:sigopal/provider/auth_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:sigopal/provider/auth_provider.dart';
 import 'package:sigopal/widget/textfield/textfield_node_widget.dart';
+import 'package:sigopal/notification_service.dart';
 
 class NodeScreen extends StatefulWidget {
   const NodeScreen({super.key});
@@ -13,30 +16,60 @@ class NodeScreen extends StatefulWidget {
 class _NodeScreenState extends State<NodeScreen> {
   final nodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  
+  StreamSubscription<DatabaseEvent>? _statusSubscription;
+  // Variabel untuk melacak status koneksi
+  bool _isNodeDisconnected = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async { 
-      if (!mounted) return; 
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      await auth.initializeUserNode(); 
+      await auth.initializeUserNode();
 
       if (!mounted) return;
 
-      // Setelah initializeUserNode selesai, cek apakah node sudah ada
-      if (auth.getCurrentNode() != null && auth.getCurrentNode()!.isNotEmpty) {
-        // Jika node sudah ada, isi controller dan langsung navigasi ke home
-        nodeController.text = auth.getCurrentNode()!;
+      final currentNode = auth.getCurrentNode();
+      if (currentNode != null && currentNode.isNotEmpty) {
+        nodeController.text = currentNode;
+        
+        _setupNodeStatusListener(currentNode);
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       }
     });
   }
 
-  @override
-  void dispose() {
-    nodeController.dispose();
-    super.dispose();
+  void _setupNodeStatusListener(String nodeName) {
+    _statusSubscription?.cancel();
+
+    final dbRef = FirebaseDatabase.instance.ref('last_data/$nodeName/status');
+    
+    _statusSubscription = dbRef.onValue.listen((event) {
+      final status = event.snapshot.value;
+      
+      if ((status == 0 || status == '0') && !_isNodeDisconnected) {
+        NotificationService.showNotification(
+          title: '⚠️ Peringatan Node',
+          body: 'Koneksi node "$nodeName" terputus. Mohon segera dicek!',
+        );
+        setState(() {
+          _isNodeDisconnected = true;
+        });
+      } 
+      else if ((status == 1 || status == '1') && _isNodeDisconnected) {
+        NotificationService.showNotification(
+          title: '✅ Koneksi Pulih',
+          body: 'Koneksi node "$nodeName" berhasil tersambung kembali.',
+        );
+        setState(() {
+          _isNodeDisconnected = false;
+        });
+      }
+
+    }, onError: (error) {
+    });
   }
 
   void _verifyAndSaveNode() async {
@@ -47,16 +80,17 @@ class _NodeScreenState extends State<NodeScreen> {
       auth.setTopError('Harap masukkan node yang valid.');
       return;
     }
-
     auth.clearTopError();
 
+    final node = nodeController.text.trim();
     await auth.verifyNodeAndSaveToFirestore(
-      node: nodeController.text.trim(), 
+      node: node,
       onSuccess: () {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Node berhasil diverifikasi dan disimpan!')),
+          const SnackBar(content: Text('Node berhasil diverifikasi!')),
         );
+        _setupNodeStatusListener(node);
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       },
       onError: (msg) {
@@ -66,6 +100,13 @@ class _NodeScreenState extends State<NodeScreen> {
         );
       },
     );
+  }
+
+  @override
+  void dispose() {
+    nodeController.dispose();
+    _statusSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -96,7 +137,6 @@ class _NodeScreenState extends State<NodeScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-
                 if (auth.showTopError)
                   Container(
                     width: MediaQuery.of(context).size.width * 0.7,
@@ -112,7 +152,6 @@ class _NodeScreenState extends State<NodeScreen> {
                       textAlign: TextAlign.center,
                     ),
                   ),
-
                 Container(
                   padding: const EdgeInsets.all(35),
                   width: MediaQuery.of(context).size.width * 0.8,

@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:intl/date_symbol_data_local.dart'; 
 
 import 'firebase_options.dart';
 import 'provider/auth_provider.dart' as local_auth;
 import 'provider/imagepick_provider.dart';
+import 'notification_service.dart';
 
 import 'screen/welcome.dart';
 import 'screen/about_screen.dart';
@@ -18,13 +20,19 @@ import 'screen/billing_screen.dart';
 import 'screen/node_screen.dart';
 
 void main() async {
-  // Ensure Flutter widgets are initialized before Firebase.
+  // Pastikan widget Flutter diinisialisasi sebelum Firebase.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase with platform-specific options.
+  // Inisialisasi Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // PERBAIKAN: Tambahkan baris ini untuk memuat data format tanggal Indonesia
+  await initializeDateFormatting('id_ID', null);
+
+  // Inisialisasi layanan notifikasi
+  NotificationService.initialize();
 
   runApp(const MyApp());
 }
@@ -36,9 +44,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Provide your AuthProvider for authentication state management
         ChangeNotifierProvider(create: (_) => local_auth.AuthProvider()),
-        // Provide your ImagePickProvider if used across the app
         ChangeNotifierProvider(create: (_) => ImagePickProvider()),
       ],
       child: MaterialApp(
@@ -50,9 +56,7 @@ class MyApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
         ),
-        // Define the initial route for the application
         initialRoute: '/welcome',
-        // Define all named routes for navigation
         routes: {
           '/welcome': (context) => const WelcomeScreen(),
           '/about': (context) => const AboutPage(),
@@ -61,7 +65,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomePage(),
           '/volume': (context) => const VolumePage(),
           '/monitoring': (context) => const MonitoringScreen(),
-          '/controlling': (context) => const ControllingScreen(), // Keeping '/controlling' route name for consistency
+          '/controlling': (context) => const ControllingScreen(),
           '/billing': (context) => const BillingScreen(),
           '/node_screen': (context) => const NodeScreen(),
         },
@@ -75,23 +79,20 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // StreamBuilder listens to Firebase authentication state changes
     return StreamBuilder<firebase_auth.User?>(
       stream: firebase_auth.FirebaseAuth.instance.authStateChanges(),
       builder: (ctx, snapshot) {
-        // Show a loading indicator while the connection to Firebase Auth is waiting
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        // If user is logged in and their email is verified
         if (snapshot.hasData && snapshot.data!.emailVerified) {
+          // Arahkan ke NodeScreen untuk verifikasi node
           return const NodeScreen();
         }
 
-        // Otherwise, if no user is logged in or email is not verified, show the LoginScreen
         return const LoginScreen();
       },
     );
