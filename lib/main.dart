@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:intl/date_symbol_data_local.dart'; 
+import 'package:intl/date_symbol_data_local.dart';
+
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_performance/firebase_performance.dart';
 
 import 'firebase_options.dart';
 import 'provider/auth_provider.dart' as local_auth;
@@ -20,21 +25,27 @@ import 'screen/billing_screen.dart';
 import 'screen/node_screen.dart';
 
 void main() async {
-  // Pastikan widget Flutter diinisialisasi sebelum Firebase.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Inisialisasi Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
-  // PERBAIKAN: Tambahkan baris ini untuk memuat data format tanggal Indonesia
-  await initializeDateFormatting('id_ID', null);
 
-  // Inisialisasi layanan notifikasi
-  NotificationService.initialize();
+  runZonedGuarded<Future<void>>(() async {
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
-  runApp(const MyApp());
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    await initializeDateFormatting('id_ID', null);
+    NotificationService.initialize();
+
+    runApp(const MyApp());
+  }, (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -48,6 +59,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ImagePickProvider()),
       ],
       child: MaterialApp(
+        // Gunakan custom performance observer
+        navigatorObservers: [
+          CustomPerformanceObserver(),
+        ],
         debugShowCheckedModeBanner: false,
         title: 'SIGOPAL',
         theme: ThemeData.dark().copyWith(
@@ -89,12 +104,32 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData && snapshot.data!.emailVerified) {
-          // Arahkan ke NodeScreen untuk verifikasi node
           return const NodeScreen();
         }
 
         return const LoginScreen();
       },
     );
+  }
+}
+
+// Custom Performance Observer (jika diperlukan)
+class CustomPerformanceObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    if (route.settings.name != null) {
+      // Log navigasi untuk performance monitoring
+      FirebasePerformance.instance.newTrace('screen_${route.settings.name}').start();
+    }
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    if (route.settings.name != null) {
+      // Stop trace saat keluar dari screen
+      FirebasePerformance.instance.newTrace('screen_${route.settings.name}').stop();
+    }
   }
 }
