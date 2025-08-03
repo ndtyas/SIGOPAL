@@ -348,7 +348,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            "Pantau Status Kran",
+                            "Status Kran Node",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 22,
@@ -446,7 +446,7 @@ class _ControllingScreenState extends State<ControllingScreen> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Text(
-                            "Pantau Status Pompa",
+                            "Status Pompa Tandon",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 22,

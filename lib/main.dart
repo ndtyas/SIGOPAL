@@ -18,6 +18,7 @@ import 'screen/monitoring_screen.dart';
 import 'screen/controlling_screen.dart';
 import 'screen/billing_screen.dart';
 import 'screen/node_screen.dart';
+import 'screen/admin/admin_navigation.dart';
 
 void main() async {
   // Pastikan widget Flutter diinisialisasi sebelum Firebase.
@@ -56,6 +57,7 @@ class MyApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
         ),
+        // PERUBAHAN: Rute awal diarahkan ke welcome, lalu ke checkauth
         initialRoute: '/welcome',
         routes: {
           '/welcome': (context) => const WelcomeScreen(),
@@ -68,6 +70,8 @@ class MyApp extends StatelessWidget {
           '/controlling': (context) => const ControllingScreen(),
           '/billing': (context) => const BillingScreen(),
           '/node_screen': (context) => const NodeScreen(),
+          // PERUBAHAN: Tambahkan rute untuk admin
+          '/admin_home': (context) => const AdminNavigation(),
         },
       ),
     );
@@ -79,6 +83,9 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // PERUBAHAN: Menggunakan Consumer untuk mendapatkan data role dari AuthProvider
+    final authProvider = Provider.of<local_auth.AuthProvider>(context);
+    
     return StreamBuilder<firebase_auth.User?>(
       stream: firebase_auth.FirebaseAuth.instance.authStateChanges(),
       builder: (ctx, snapshot) {
@@ -89,10 +96,26 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData && snapshot.data!.emailVerified) {
-          // Arahkan ke NodeScreen untuk verifikasi node
-          return const NodeScreen();
+          // User sudah login dan verifikasi email
+          // Cek apakah data user (termasuk role) sudah diinisialisasi
+          if (!authProvider.isUserInitialized) {
+            // Jika belum, tampilkan loading sambil AuthProvider mengambil data
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
+          // Jika data sudah ada, arahkan berdasarkan role
+          if (authProvider.isAdmin) {
+            // Jika admin, langsung ke halaman admin
+            return const AdminNavigation();
+          } else {
+            // Jika user biasa, lanjutkan ke alur verifikasi node
+            return const NodeScreen();
+          }
         }
 
+        // Jika user belum login atau email belum diverifikasi, arahkan ke LoginScreen
         return const LoginScreen();
       },
     );

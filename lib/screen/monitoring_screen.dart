@@ -126,7 +126,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                 setState(() {
                   _tdsValue = data['tds']?.toString() ?? 'N/A';
                   _phValue = data['ph']?.toString() ?? 'N/A';
-                  _debitAirValue = _formatValue(data['debit_air'], 2);
+                  _debitAirValue = _formatValue(data['debit_air'], 3);
                   _isLoading = false;
                 });
                 developer.log('Data updated - TDS: $_tdsValue, pH: $_phValue, Debit Air: $_debitAirValue', name: 'MonitoringScreen');
@@ -414,7 +414,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                       ),
                     ),
                     Text(
-                      ": 1000 mg/L",
+                      ": 1 - 1500 mg/L",
                       style: TextStyle(fontSize: 17, color: Colors.white),
                     ),
                   ],
@@ -525,7 +525,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                           ),
                           child: const Center(
                             child: Text(
-                              "Cek\nVolume Air",
+                              "Cek\nKetinggian\nTandon",
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Color(0xE617778F),

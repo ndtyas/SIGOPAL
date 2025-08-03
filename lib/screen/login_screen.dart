@@ -258,10 +258,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                   // Call submit (login) or register method based on current mode
                                   if (auth.islogin) {
                                     auth.submit(
-                                      onSuccess: () async {
-                                        // Langsung navigasi ke NodeScreen setelah login berhasil
-                                        if (!context.mounted) return;
-                                        Navigator.pushNamedAndRemoveUntil(context, '/node_screen', (route) => false);
+                                      onSuccess: () {
+                                        // PERUBAHAN: Tidak perlu navigasi di sini.
+                                        // AuthWrapper akan menangani navigasi secara otomatis
+                                        // setelah status auth berubah.
                                       },
                                       onError: (msg) {
                                         if (!context.mounted) return;

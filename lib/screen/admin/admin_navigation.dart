@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sigopal/provider/auth_provider.dart' as custom_auth;
 import 'admin_accounts_screen.dart';
 import 'admin_billing_screen.dart';
+import 'admin_monitoring_screen.dart';
 
 class AdminNavigation extends StatefulWidget {
   const AdminNavigation({super.key});
@@ -18,13 +19,13 @@ class _AdminNavigationState extends State<AdminNavigation> {
   final List<Widget> _screens = [
     const AdminAccountsScreen(),
     const AdminBillingScreen(),
+    const AdminMonitoringScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Consumer<custom_auth.AuthProvider>(
       builder: (context, auth, child) {
-        // Double check - pastikan user masih admin
         if (!auth.isAdmin) {
           // Redirect ke login jika bukan admin
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -64,6 +65,10 @@ class _AdminNavigationState extends State<AdminNavigation> {
               BottomNavigationBarItem(
                 icon: Icon(Icons.receipt_long),
                 label: 'Riwayat Tagihan',
+              ),
+              BottomNavigationBarItem(
+                icon: Icon(Icons.monitor_heart),
+                label: 'Pemantauan',
               ),
             ],
           ),
@@ -130,6 +135,17 @@ class _AdminNavigationState extends State<AdminNavigation> {
             onTap: () {
               setState(() {
                 _currentIndex = 1;
+              });
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.monitor_heart),
+            title: const Text('Pemantauan'),
+            selected: _currentIndex == 2,
+            onTap: () {
+              setState(() {
+                _currentIndex = 2;
               });
               Navigator.pop(context);
             },
@@ -202,7 +218,7 @@ class _AdminNavigationState extends State<AdminNavigation> {
               final navigator = Navigator.of(context);
               final scaffoldMessenger = ScaffoldMessenger.of(context);
               
-              navigator.pop(); // Close dialog
+              navigator.pop();
               
               // Show loading dengan context yang masih valid
               final loadingContext = context;
@@ -217,14 +233,13 @@ class _AdminNavigationState extends State<AdminNavigation> {
               try {
                 await auth.signOut();
                 if (mounted) {
-                  // Tutup loading dialog terlebih dahulu
+                  // Tutup loading dialog
                   navigator.pop();
-                  // Kemudian navigate ke welcome
                   navigator.pushReplacementNamed('/welcome');
                 }
               } catch (e) {
                 if (mounted) {
-                  navigator.pop(); // Close loading
+                  navigator.pop();
                   scaffoldMessenger.showSnackBar(
                     SnackBar(
                       content: Text('Error saat logout: $e'),

@@ -1,10 +1,7 @@
-import 'dart:async';
-import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
 import 'package:sigopal/widget/textfield/textfield_node_widget.dart';
-import 'package:sigopal/notification_service.dart';
 
 class NodeScreen extends StatefulWidget {
   const NodeScreen({super.key});
@@ -16,59 +13,19 @@ class NodeScreen extends StatefulWidget {
 class _NodeScreenState extends State<NodeScreen> {
   final nodeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  
-  StreamSubscription<DatabaseEvent>? _statusSubscription;
-  // Variabel untuk melacak status koneksi
-  bool _isNodeDisconnected = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final auth = Provider.of<AuthProvider>(context, listen: false);
-      await auth.initializeUserNode();
-
-      if (!mounted) return;
 
       final currentNode = auth.getCurrentNode();
       if (currentNode != null && currentNode.isNotEmpty) {
-        nodeController.text = currentNode;
-        
-        _setupNodeStatusListener(currentNode);
+        // Jika user sudah memiliki node, langsung arahkan ke home page.
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       }
-    });
-  }
-
-  void _setupNodeStatusListener(String nodeName) {
-    _statusSubscription?.cancel();
-
-    final dbRef = FirebaseDatabase.instance.ref('last_data/$nodeName/status');
-    
-    _statusSubscription = dbRef.onValue.listen((event) {
-      final status = event.snapshot.value;
-      
-      if ((status == 0 || status == '0') && !_isNodeDisconnected) {
-        NotificationService.showNotification(
-          title: '⚠️ Peringatan Node',
-          body: 'Koneksi node "$nodeName" terputus. Mohon segera dicek!',
-        );
-        setState(() {
-          _isNodeDisconnected = true;
-        });
-      } 
-      else if ((status == 1 || status == '1') && _isNodeDisconnected) {
-        NotificationService.showNotification(
-          title: '✅ Koneksi Pulih',
-          body: 'Koneksi node "$nodeName" berhasil tersambung kembali.',
-        );
-        setState(() {
-          _isNodeDisconnected = false;
-        });
-      }
-
-    }, onError: (error) {
     });
   }
 
@@ -90,7 +47,6 @@ class _NodeScreenState extends State<NodeScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Node berhasil diverifikasi!')),
         );
-        _setupNodeStatusListener(node);
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       },
       onError: (msg) {
@@ -105,7 +61,6 @@ class _NodeScreenState extends State<NodeScreen> {
   @override
   void dispose() {
     nodeController.dispose();
-    _statusSubscription?.cancel();
     super.dispose();
   }
 
@@ -147,7 +102,7 @@ class _NodeScreenState extends State<NodeScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      auth.topErrorMessage, 
+                      auth.topErrorMessage,
                       style: const TextStyle(color: Colors.red),
                       textAlign: TextAlign.center,
                     ),
