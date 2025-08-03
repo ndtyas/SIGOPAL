@@ -91,7 +91,6 @@ class PrimaryStyledButton extends StatelessWidget {
   }
 }
 
-// Kelas utama untuk layar tagihan
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
 
@@ -114,9 +113,10 @@ class _BillingScreenState extends State<BillingScreen> {
   double _currentUsage = 0.0;
   double _currentTotalCost = 0.0;
 
-  /// State untuk melacak apakah tagihan kemarin terlewat dan proses penyimpanannya.
-  bool _isYesterdayBillMissing = false;
-  bool _isSavingYesterdayBill = false;
+  /// State untuk melacak apakah tagihan bulan lalu terlewat dan proses penyimpanannya.
+  bool _isPreviousMonthBillMissing = false;
+  bool _isSavingPreviousMonthBill = false;
+  bool _isSavingCurrentBill = false;
 
   // State untuk data
   List<Map<String, dynamic>> _billingHistory = [];
@@ -137,36 +137,6 @@ class _BillingScreenState extends State<BillingScreen> {
     } catch (e) {
       developer.log('Error initializing Firebase: $e', name: 'BillingScreen');
     }
-  }
-
-  Future<void> _debugDatabaseStructure() async {
-    if (_activeNode == null) {
-      developer.log('Debug skipped: No active node.', name: 'BillingScreen.Debug');
-      return;
-    }
-    developer.log('--- Starting Database Structure Debug for node: $_activeNode ---', name: 'BillingScreen.Debug');
-    try {
-      final path = 'last_data/$_activeNode';
-      developer.log('Checking path: /$path', name: 'BillingScreen.Debug');
-      final snapshot = await _databaseRef.child(path).get();
-      if (snapshot.exists) {
-        developer.log('SUCCESS: Data found at path "/$path".', name: 'BillingScreen.Debug');
-        developer.log('Snapshot value: ${snapshot.value}', name: 'BillingScreen.Debug');
-        if (snapshot.value is Map) {
-          final dataMap = snapshot.value as Map;
-          if (dataMap.containsKey('debit_air')) {
-            developer.log('>>> Key "debit_air" FOUND! Value: ${dataMap['debit_air']}', name: 'BillingScreen.Debug');
-          } else {
-            developer.log('--- Key "debit_air" NOT found at this path.', name: 'BillingScreen.Debug');
-          }
-        }
-      } else {
-        developer.log('INFO: No data found at path "/$path".', name: 'BillingScreen.Debug');
-      }
-    } catch (e) {
-      developer.log('Error during database debug: $e', name: 'BillingScreen.Debug');
-    }
-    developer.log('--- Finished Database Structure Debug ---', name: 'BillingScreen.Debug');
   }
 
   Future<void> _loadInitialData() async {
@@ -198,14 +168,12 @@ class _BillingScreenState extends State<BillingScreen> {
           userName = data?['username'] ?? "Pengguna";
           nodeName = retrievedNode ?? "Node Tidak Ditemukan";
           _activeNode = retrievedNode;
-          _isYesterdayBillMissing = false;
+          _isPreviousMonthBillMissing = false;
         });
 
         if (retrievedNode != null) {
-          await _debugDatabaseStructure();
-          
-          await _checkIfPreviousDayBillIsMissing(user.uid, retrievedNode);
-          await _calculateCurrentDayBill(retrievedNode);
+          await _checkIfPreviousMonthBillIsMissing(user.uid, retrievedNode);
+          await _calculateCurrentMonthBill(retrievedNode);
           await _loadBillingHistory();
         } else {
           _showErrorSnackBar(messenger, "Node tidak ditemukan. Harap pilih node terlebih dahulu.");
@@ -224,11 +192,11 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
 
-  Future<void> _checkIfPreviousDayBillIsMissing(String userId, String node) async {
+  Future<void> _checkIfPreviousMonthBillIsMissing(String userId, String node) async {
     final now = DateTime.now();
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
-    final startOfYesterday = Timestamp.fromDate(yesterday);
-    final startOfToday = Timestamp.fromDate(DateTime(now.year, now.month, now.day));
+    final previousMonth = DateTime(now.year, now.month - 1, 1);
+    final startOfPreviousMonth = DateTime(previousMonth.year, previousMonth.month, 1);
+    final endOfPreviousMonth = DateTime(now.year, now.month, 0, 23, 59, 59);
 
     try {
       final querySnapshot = await FirebaseFirestore.instance
@@ -236,23 +204,23 @@ class _BillingScreenState extends State<BillingScreen> {
           .doc(userId)
           .collection('billing_records')
           .where('nodeName', isEqualTo: node)
-          .where('startDate', isGreaterThanOrEqualTo: startOfYesterday)
-          .where('startDate', isLessThan: startOfToday)
+          .where('startDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPreviousMonth))
+          .where('startDate', isLessThanOrEqualTo: Timestamp.fromDate(endOfPreviousMonth))
           .limit(1)
           .get();
 
       if (mounted) {
         setState(() {
-          _isYesterdayBillMissing = querySnapshot.docs.isEmpty;
+          _isPreviousMonthBillMissing = querySnapshot.docs.isEmpty;
         });
       }
     } catch (e) {
-      developer.log("Error checking yesterday's bill: $e", name: "BillingScreen");
-      if (mounted) setState(() => _isYesterdayBillMissing = false);
+      developer.log("Error checking previous month's bill: $e", name: "BillingScreen");
+      if (mounted) setState(() => _isPreviousMonthBillMissing = false);
     }
   }
 
-  Future<void> _manualSavePreviousDayBill() async {
+  Future<void> _manualSavePreviousMonthBill() async {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
 
@@ -266,97 +234,196 @@ class _BillingScreenState extends State<BillingScreen> {
       return;
     }
 
-    setState(() => _isSavingYesterdayBill = true);
+    setState(() => _isSavingPreviousMonthBill = true);
 
     final String node = _activeNode!;
     final now = DateTime.now();
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    final previousMonth = DateTime(now.year, now.month - 1, 1);
+    final startOfPreviousMonth = DateTime(previousMonth.year, previousMonth.month, 1);
+    final endOfPreviousMonth = DateTime(now.year, now.month, 0, 23, 59, 59);
 
     try {
-      final yesterdayKey = DateFormat('yyyy-MM-dd').format(yesterday);
-      final yesterdaySnapshot = await _databaseRef.child(_lastDataPath).child(node).child(yesterdayKey).get();
+      // Ambil data bulan lalu dari Realtime Database
+      final previousMonthKey = DateFormat('yyyy-MM').format(previousMonth);
+      final previousMonthSnapshot = await _databaseRef.child(_lastDataPath).child(node).child(previousMonthKey).get();
 
       if (!mounted) return;
-      if (!yesterdaySnapshot.exists || yesterdaySnapshot.value == null) {
-        _showErrorSnackBar(messenger, "Gagal menyimpan: Data meteran kemarin tidak ditemukan.");
-        setState(() => _isSavingYesterdayBill = false);
+      if (!previousMonthSnapshot.exists || previousMonthSnapshot.value == null) {
+        _showErrorSnackBar(messenger, "Gagal menyimpan: Data meteran bulan lalu tidak ditemukan.");
+        setState(() => _isSavingPreviousMonthBill = false);
         return;
       }
-      final meterAkhirKemarin = _convertToDouble(yesterdaySnapshot.value);
+      final meterAkhirBulanLalu = _convertToDouble(previousMonthSnapshot.value);
 
-      final twoDaysAgo = yesterday.subtract(const Duration(days: 1));
-      final twoDaysAgoKey = DateFormat('yyyy-MM-dd').format(twoDaysAgo);
-      final twoDaysAgoSnapshot = await _databaseRef.child(_lastDataPath).child(node).child(twoDaysAgoKey).get();
+      // Ambil data 2 bulan yang lalu untuk meter awal
+      final twoMonthsAgo = DateTime(previousMonth.year, previousMonth.month - 1, 1);
+      final twoMonthsAgoKey = DateFormat('yyyy-MM').format(twoMonthsAgo);
+      final twoMonthsAgoSnapshot = await _databaseRef.child(_lastDataPath).child(node).child(twoMonthsAgoKey).get();
       
       if (!mounted) return;
-      final meterAwalKemarin = _convertToDouble(twoDaysAgoSnapshot.value);
+      final meterAwalBulanLalu = _convertToDouble(twoMonthsAgoSnapshot.value);
 
-      final usageKemarin = meterAkhirKemarin - meterAwalKemarin;
-      final costKemarin = (usageKemarin > 0 ? usageKemarin : 0) * hargaPerCBM;
+      final usageBulanLalu = meterAkhirBulanLalu - meterAwalBulanLalu;
+      final costBulanLalu = (usageBulanLalu > 0 ? usageBulanLalu : 0) * hargaPerCBM;
 
-      await _saveBillingDataInternal(
-        user.uid, node, yesterday, yesterday.add(const Duration(hours: 23, minutes: 59, seconds: 59)),
-        meterAwalKemarin, meterAkhirKemarin, hargaPerCBM,
-        usageKemarin > 0 ? usageKemarin : 0, costKemarin,
+      // Simpan ke Firestore
+      await _saveBillingData(
+        userId: user.uid,
+        node: node,
+        startDate: startOfPreviousMonth,
+        endDate: endOfPreviousMonth,
+        meterAwal: meterAwalBulanLalu,
+        meterAkhir: meterAkhirBulanLalu,
+        usage: usageBulanLalu > 0 ? usageBulanLalu : 0,
+        totalCost: costBulanLalu,
       );
 
       if (!mounted) return;
-      _showSuccessSnackBar(messenger, "Tagihan kemarin berhasil disimpan!");
+      _showSuccessSnackBar(messenger, "Tagihan bulan lalu berhasil disimpan!");
       await _loadInitialData();
     } catch (e) {
       if (mounted) {
-        _showErrorSnackBar(messenger, "Gagal menyimpan tagihan kemarin: $e");
+        _showErrorSnackBar(messenger, "Gagal menyimpan tagihan bulan lalu: $e");
       }
     } finally {
       if (mounted) {
-        setState(() => _isSavingYesterdayBill = false);
+        setState(() => _isSavingPreviousMonthBill = false);
       }
     }
   }
 
-  Future<void> _calculateCurrentDayBill(String node) async {
+  Future<void> _saveCurrentMonthBill() async {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    if (_activeNode == null) {
+      _showErrorSnackBar(messenger, "Node tidak aktif, tidak bisa menyimpan.");
+      return;
+    }
+    final user = auth_firebase.FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showErrorSnackBar(messenger, "Pengguna tidak login.");
+      return;
+    }
+
+    setState(() => _isSavingCurrentBill = true);
+
+    final String node = _activeNode!;
+    final now = DateTime.now();
+    final startOfCurrentMonth = DateTime(now.year, now.month, 1);
+    final endOfCurrentMonth = now;
+
+    try {
+      // Simpan ke Firestore
+      await _saveBillingData(
+        userId: user.uid,
+        node: node,
+        startDate: startOfCurrentMonth,
+        endDate: endOfCurrentMonth,
+        meterAwal: meterAwal,
+        meterAkhir: meterAkhir,
+        usage: _currentUsage,
+        totalCost: _currentTotalCost,
+      );
+
+      // Simpan meter akhir ke Realtime Database untuk referensi bulan berikutnya
+      final currentMonthKey = DateFormat('yyyy-MM').format(startOfCurrentMonth);
+      await _databaseRef.child(_lastDataPath).child(node).update({ 
+        currentMonthKey: meterAkhir.toStringAsFixed(3) 
+      });
+
+      if (!mounted) return;
+      _showSuccessSnackBar(messenger, "Tagihan bulan ini berhasil disimpan!");
+      await _loadInitialData();
+    } catch (e) {
+      if (mounted) {
+        _showErrorSnackBar(messenger, "Gagal menyimpan tagihan bulan ini: $e");
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingCurrentBill = false);
+      }
+    }
+  }
+
+  Future<void> _saveBillingData({
+    required String userId,
+    required String node,
+    required DateTime startDate,
+    required DateTime endDate,
+    required double meterAwal,
+    required double meterAkhir,
+    required double usage,
+    required double totalCost,
+  }) async {
+    try {
+      // Generate document ID dengan format: node_YYYY-MM
+      final docId = '${node}_${DateFormat('yyyy-MM').format(startDate)}';
+      
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .collection('billing_records')
+          .doc(docId)
+          .set({
+            'docId': docId,
+            'nodeName': node,
+            'startDate': Timestamp.fromDate(startDate),
+            'endDate': Timestamp.fromDate(endDate),
+            'meterAwal': meterAwal,
+            'meterAkhir': meterAkhir,
+            'hargaPerCBM': hargaPerCBM,
+            'usage': usage,
+            'totalCost': totalCost,
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+
+      developer.log('Billing data saved to Firestore for month: ${DateFormat('yyyy-MM').format(startDate)}', 
+          name: 'BillingScreen');
+    } catch (e) {
+      developer.log("Error saving billing data: $e", name: "BillingScreen", error: e);
+      rethrow;
+    }
+  }
+
+  Future<void> _calculateCurrentMonthBill(String node) async {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-        final now = DateTime.now();
-        startDate = DateTime(now.year, now.month, now.day);
-        endDate = now;
+      final now = DateTime.now();
+      startDate = DateTime(now.year, now.month, 1);
+      endDate = now;
 
-        final String currentDebitPath = 'last_data/$node/debit_air';
-        developer.log('Attempting to read current debit from RTDB path: /$currentDebitPath', name: 'BillingScreen');
-        final DataSnapshot lastDebitSnapshot = await _databaseRef.child(currentDebitPath).get();
-        if (!mounted) return;
-        double currentDebit = _convertToDouble(lastDebitSnapshot.value);
-        developer.log('Value received for currentDebit: ${lastDebitSnapshot.value} -> Parsed as: $currentDebit', name: 'BillingScreen');
+      // Ambil data debit air saat ini
+      final String currentDebitPath = 'last_data/$node/debit_air';
+      final DataSnapshot lastDebitSnapshot = await _databaseRef.child(currentDebitPath).get();
+      if (!mounted) return;
+      double currentDebit = _convertToDouble(lastDebitSnapshot.value);
 
-        final yesterday = now.subtract(const Duration(days: 1));
-        final yesterdayKey = DateFormat('yyyy-MM-dd').format(yesterday);
-        final String previousDayPath = '$_lastDataPath/$node/$yesterdayKey'; 
-        developer.log('Attempting to read previous day debit from RTDB path: /$previousDayPath', name: 'BillingScreen');
-        final DataSnapshot previousDaySnapshot = await _databaseRef.child(previousDayPath).get();
-        if (!mounted) return;
+      // Ambil data bulan lalu untuk meter awal
+      final previousMonth = DateTime(now.year, now.month - 1, 1);
+      final previousMonthKey = DateFormat('yyyy-MM').format(previousMonth);
+      final String previousMonthPath = '$_lastDataPath/$node/$previousMonthKey'; 
+      final DataSnapshot previousMonthSnapshot = await _databaseRef.child(previousMonthPath).get();
+      if (!mounted) return;
 
-        double previousDayDebit = 0.0;
-        if (previousDaySnapshot.exists && previousDaySnapshot.value != null) {
-            previousDayDebit = _convertToDouble(previousDaySnapshot.value);
-            developer.log('Value received for previousDayDebit: ${previousDaySnapshot.value} -> Parsed as: $previousDayDebit', name: 'BillingScreen');
-        } else {
-            developer.log('No data found for previous day\'s debit.', name: 'BillingScreen');
-        }
+      double previousMonthDebit = 0.0;
+      if (previousMonthSnapshot.exists && previousMonthSnapshot.value != null) {
+          previousMonthDebit = _convertToDouble(previousMonthSnapshot.value);
+      }
 
-        setState(() {
-            meterAwal = previousDayDebit;
-            meterAkhir = currentDebit;
-            _currentUsage = meterAkhir - meterAwal;
-            if (_currentUsage < 0) {
-              developer.log('Current usage is negative ($_currentUsage). Resetting to 0.', name: 'BillingScreen');
-              _currentUsage = 0.0;
-            }
-            _currentTotalCost = _currentUsage * hargaPerCBM;
-        });
+      setState(() {
+          meterAwal = previousMonthDebit;
+          meterAkhir = currentDebit;
+          _currentUsage = meterAkhir - meterAwal;
+          if (_currentUsage < 0) {
+            _currentUsage = 0.0;
+          }
+          _currentTotalCost = _currentUsage * hargaPerCBM;
+      });
     } catch (e) {
         if (mounted) _showErrorSnackBar(messenger, "Error menghitung meteran: $e");
-        developer.log("Error calculating current day bill: $e", name: "BillingScreen", error: e);
+        developer.log("Error calculating current month bill: $e", name: "BillingScreen", error: e);
     }
   }
 
@@ -369,12 +436,25 @@ class _BillingScreenState extends State<BillingScreen> {
     }
     try {
       final querySnapshot = await FirebaseFirestore.instance
-          .collection('users').doc(user.uid).collection('billing_records')
-          .orderBy('startDate', descending: true).limit(90).get();
+          .collection('users')
+          .doc(user.uid)
+          .collection('billing_records')
+          .orderBy('startDate', descending: true)
+          .get();
 
       if (mounted) {
+        // Filter hanya 12 bulan terakhir
+        final twelveMonthsAgo = DateTime.now().subtract(const Duration(days: 365));
         setState(() {
-          _billingHistory = querySnapshot.docs.map((doc) => doc.data()).toList();
+          _billingHistory = querySnapshot.docs
+              .where((doc) => (doc.data()['startDate'] as Timestamp).toDate().isAfter(twelveMonthsAgo))
+              .map((doc) {
+                final data = doc.data();
+                return {
+                  ...data,
+                  'docId': doc.id,
+                };
+              }).toList();
         });
       }
     } catch (e) {
@@ -457,7 +537,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                 ),
                               ),
                             
-                            if (_isYesterdayBillMissing) _buildMissedBillCard(),
+                            if (_isPreviousMonthBillMissing) _buildMissedBillCard(),
                             
                             Container(
                               padding: const EdgeInsets.all(24),
@@ -473,20 +553,21 @@ class _BillingScreenState extends State<BillingScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   const Center(
-                                    child: Text("TAGIHAN HARI INI", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF17778F))),
+                                    child: Text("TAGIHAN", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xFF17778F))),
                                   ),
                                   const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
                                   _buildDetailRow("Nama", userName, isLoading: _isLoading),
                                   _buildDetailRow("Node", _isLoading ? "Memuat..." : (activeNode ?? "Belum dipilih"), isLoading: false),
                                   const SizedBox(height: 10),
-                                  _buildDetailRow("Tanggal", startDate == null ? "Memuat..." : DateFormat('dd MMMM yyyy').format(startDate!), isLoading: _isLoading),
+                                  _buildDetailRow("Periode", startDate == null ? "Memuat..." : DateFormat('MMMM yyyy', 'id_ID').format(startDate!), isLoading: _isLoading),
                                   const SizedBox(height: 10),
-                                  _buildDetailRow("Meter Awal", "${meterAwal.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
-                                  _buildDetailRow("Meter Akhir", "${meterAkhir.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
-                                  _buildDetailRow("Pemakaian", "${_currentUsage.toStringAsFixed(2)} m\u00B3", isLoading: _isLoading),
+                                  _buildDetailRow("Meter Awal", "${meterAwal.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
+                                  _buildDetailRow("Meter Akhir", "${meterAkhir.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
+                                  _buildDetailRow("Pemakaian", "${_currentUsage.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
                                   _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency(hargaPerCBM)}"),
                                   const SizedBox(height: 10),
                                   const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
+                                  
                                   Align(
                                     alignment: Alignment.centerRight,
                                     child: Row(
@@ -500,6 +581,15 @@ class _BillingScreenState extends State<BillingScreen> {
                                           Text(_formatCurrency(_currentTotalCost), style: const TextStyle(color: Color(0xFF17778F), fontSize: 20, fontWeight: FontWeight.bold)),
                                       ],
                                     ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  PrimaryStyledButton(
+                                    onPressed: _isSavingCurrentBill ? null : _saveCurrentMonthBill,
+                                    text: "Simpan Tagihan Bulan Ini",
+                                    isLoading: _isSavingCurrentBill,
+                                    backgroundColor: const Color(0xFF17778F),
+                                    foregroundColor: Colors.white,
+                                    leadingIcon: const Icon(Icons.save, color: Colors.white),
                                   ),
                                 ],
                               ),
@@ -520,7 +610,7 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 
   Widget _buildMissedBillCard() {
-    final yesterdayString = DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(DateTime.now().subtract(const Duration(days: 1)));
+    final previousMonthString = DateFormat('MMMM yyyy', 'id_ID').format(DateTime.now().subtract(const Duration(days: 30)));
     return Card(
       elevation: 4, margin: const EdgeInsets.only(bottom: 20), color: const Color(0xFFFFF3CD),
       shape: RoundedRectangleBorder(
@@ -537,7 +627,7 @@ class _BillingScreenState extends State<BillingScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    "Tagihan untuk hari kemarin ($yesterdayString) belum tersimpan.",
+                    "Tagihan untuk bulan lalu ($previousMonthString) belum tersimpan.",
                     style: const TextStyle(color: Color(0xFF856404), fontWeight: FontWeight.bold, fontSize: 15,),
                   ),
                 ),
@@ -545,8 +635,8 @@ class _BillingScreenState extends State<BillingScreen> {
             ),
             const SizedBox(height: 12),
             PrimaryStyledButton(
-              onPressed: _isSavingYesterdayBill ? null : _manualSavePreviousDayBill,
-              text: "Simpan Tagihan Kemarin", isLoading: _isSavingYesterdayBill,
+              onPressed: _isSavingPreviousMonthBill ? null : _manualSavePreviousMonthBill,
+              text: "Simpan Tagihan Bulan Lalu", isLoading: _isSavingPreviousMonthBill,
               backgroundColor: const Color(0xFFFFA000), foregroundColor: Colors.white,
               leadingIcon: const Icon(Icons.save_as, color: Colors.white),
             ),
@@ -564,51 +654,35 @@ class _BillingScreenState extends State<BillingScreen> {
       return;
     }
 
-    final Map<String, List<Map<String, dynamic>>> monthlyHistory = {};
-    for (var record in _billingHistory) {
-      final recordStartDate = (record['startDate'] as Timestamp).toDate();
-      final monthKey = DateFormat('MMMM yyyy', 'id_ID').format(recordStartDate);
-      monthlyHistory.putIfAbsent(monthKey, () => []).add(record);
-    }
-
-    final sortedMonths = monthlyHistory.keys.toList()
-      ..sort((a, b) => DateFormat('MMMM yyyy', 'id_ID').parse(b).compareTo(DateFormat('MMMM yyyy', 'id_ID').parse(a)));
-
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
           backgroundColor: const Color(0xF2FFFFFF),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text("Riwayat Tagihan Bulanan", style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
+          title: const Text("Riwayat Tagihan", style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
           content: SizedBox(
             width: double.maxFinite,
             child: ListView.builder(
               shrinkWrap: true,
-              itemCount: sortedMonths.length,
+              itemCount: _billingHistory.length,
               itemBuilder: (context, index) {
-                final month = sortedMonths[index];
-                final dailyRecords = monthlyHistory[month]!;
-                final double monthlyTotal = dailyRecords.fold(0.0, (total, record) => total + (record['totalCost'] as num));
+                final record = _billingHistory[index];
+                final recordDate = (record['startDate'] as Timestamp).toDate();
+                final monthName = DateFormat('MMMM yyyy', 'id_ID').format(recordDate);
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6), elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   color: const Color(0xFFE0F2F7),
-                  child: ExpansionTile(
-                    title: Text(month, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF17778F))),
-                    subtitle: Text("Total: Rp ${_formatCurrency(monthlyTotal)}", style: const TextStyle(color: Color(0xFF004D40))),
-                    children: dailyRecords.map((record) {
-                      final recordDate = (record['startDate'] as Timestamp).toDate();
-                      return ListTile(
-                        title: Text(DateFormat('EEEE, dd MMMM yyyy', 'id_ID').format(recordDate)),
-                        trailing: Text("Rp ${_formatCurrency((record['totalCost'] as num).toDouble())}"),
-                        onTap: () {
-                          Navigator.of(dialogContext).pop();
-                          _showBillingDetailDialog(record);
-                        },
-                      );
-                    }).toList(),
+                  child: ListTile(
+                    title: Text(monthName, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF17778F))),
+                    subtitle: Text("Pemakaian: ${(record['usage'] as num).toStringAsFixed(3)} m³", style: const TextStyle(color: Color(0xFF004D40))),
+                    trailing: Text("Rp ${_formatCurrency((record['totalCost'] as num).toDouble())}"),
+                    onTap: () {
+                      Navigator.of(dialogContext).pop();
+                      _showBillingDetailDialog(record);
+                    },
                   ),
                 );
               },
@@ -625,24 +699,6 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  Future<void> _saveBillingDataInternal(String userId, String node, DateTime startDt, DateTime endDt, double mtrAwal, double mtrAkhir, double hargaCBM, double usage, double totalCost) async {
-    try {
-      String docId = DateFormat('yyyyMMdd_HHmmss_SSS').format(DateTime.now());
-      await FirebaseFirestore.instance.collection('users').doc(userId).collection('billing_records').doc(docId).set({
-        'startDate': Timestamp.fromDate(startDt), 'endDate': Timestamp.fromDate(endDt),
-        'meterAwal': mtrAwal, 'meterAkhir': mtrAkhir, 'hargaPerCBM': hargaCBM,
-        'usage': usage, 'totalCost': totalCost, 'timestamp': FieldValue.serverTimestamp(),
-        'docId': docId, 'nodeName': node,
-      });
-      final dayToSaveKey = DateFormat('yyyy-MM-dd').format(startDt);
-      await _databaseRef.child(_lastDataPath).child(node).update({ dayToSaveKey: mtrAkhir.toStringAsFixed(4) }); // Simpan sebagai string
-      developer.log('Saved meterAkhir ($mtrAkhir) to RTDB at $_lastDataPath/$node/$dayToSaveKey', name: 'BillingScreen');
-    } catch (e) {
-      developer.log("Error saving billing data: $e", name: "BillingScreen", error: e);
-      rethrow;
-    }
-  }
-
   void _showBillingDetailDialog(Map<String, dynamic> billingRecord) {
     if (!mounted) return;
 
@@ -653,16 +709,16 @@ class _BillingScreenState extends State<BillingScreen> {
           return AlertDialog(
             backgroundColor: const Color(0xF2FFFFFF),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text("Detail Tagihan\n${DateFormat('dd MMMM yyyy', 'id_ID').format(recordStartDate)}",
+            title: Text("Detail Tagihan\n${DateFormat('MMMM yyyy', 'id_ID').format(recordStartDate)}",
                 style: const TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold, fontSize: 18),
                 textAlign: TextAlign.center),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDetailRow("Meter Awal", "${(billingRecord['meterAwal'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
-                  _buildDetailRow("Meter Akhir", "${(billingRecord['meterAkhir'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
-                  _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as num).toDouble().toStringAsFixed(2)} m\u00B3"),
+                  _buildDetailRow("Meter Awal", "${(billingRecord['meterAwal'] as num).toStringAsFixed(3)} m\u00B3"),
+                  _buildDetailRow("Meter Akhir", "${(billingRecord['meterAkhir'] as num).toStringAsFixed(3)} m\u00B3"),
+                  _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as num).toStringAsFixed(3)} m\u00B3"),
                   _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency((billingRecord['hargaPerCBM'] as num).toDouble())}"),
                   const Divider(height: 15, thickness: 1, color: Colors.grey),
                   Align(
@@ -733,9 +789,16 @@ class _BillingScreenState extends State<BillingScreen> {
       return;
     }
     try {
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).collection('billing_records').doc(docIdToDelete).delete();
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('billing_records')
+          .doc(docIdToDelete)
+          .delete();
+      
+      // Hapus juga dari Realtime Database jika diperlukan
       final recordDate = (billingRecord['endDate'] as Timestamp).toDate();
-      final rtdbKey = DateFormat('yyyy-MM-dd').format(recordDate);
+      final rtdbKey = DateFormat('yyyy-MM').format(recordDate);
       if (_activeNode != null) {
         await _databaseRef.child(_lastDataPath).child(_activeNode!).child(rtdbKey).remove();
       }
