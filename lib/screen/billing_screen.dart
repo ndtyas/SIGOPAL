@@ -113,7 +113,6 @@ class _BillingScreenState extends State<BillingScreen> {
   double _currentUsage = 0.0;
   double _currentTotalCost = 0.0;
 
-  /// State untuk melacak apakah tagihan bulan lalu terlewat dan proses penyimpanannya.
   bool _isPreviousMonthBillMissing = false;
   bool _isSavingPreviousMonthBill = false;
   bool _isSavingCurrentBill = false;
@@ -138,6 +137,33 @@ class _BillingScreenState extends State<BillingScreen> {
       developer.log('Error initializing Firebase: $e', name: 'BillingScreen');
     }
   }
+  
+  // Fungsi baru untuk mengambil harga global dari Firestore
+  Future<void> _fetchGlobalWaterPrice() async {
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('settings')
+          .doc('main')
+          .get();
+
+      if (docSnapshot.exists && docSnapshot.data() != null) {
+        final data = docSnapshot.data()!;
+        if (mounted) {
+          setState(() {
+            hargaPerCBM = (data['hargaPerCBM'] as num?)?.toDouble() ?? 2000.0;
+            developer.log('Global water price fetched: $hargaPerCBM', name: 'BillingScreen');
+          });
+        }
+      } else {
+        developer.log('Settings document does not exist. Using default price.', name: 'BillingScreen');
+      }
+    } catch (e) {
+      developer.log("Error fetching global water price: $e", name: "BillingScreen");
+      if (mounted) {
+        _showErrorSnackBar(ScaffoldMessenger.of(context), "Gagal mengambil data harga terbaru.");
+      }
+    }
+  }
 
   Future<void> _loadInitialData() async {
     if (!mounted) return;
@@ -155,6 +181,9 @@ class _BillingScreenState extends State<BillingScreen> {
     }
 
     try {
+      // Ambil data harga global terlebih dahulu
+      await _fetchGlobalWaterPrice();
+
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (!mounted) return;
 
@@ -326,7 +355,6 @@ class _BillingScreenState extends State<BillingScreen> {
         totalCost: _currentTotalCost,
       );
 
-      // Simpan meter akhir ke Realtime Database untuk referensi bulan berikutnya
       final currentMonthKey = DateFormat('yyyy-MM').format(startOfCurrentMonth);
       await _databaseRef.child(_lastDataPath).child(node).update({ 
         currentMonthKey: meterAkhir.toStringAsFixed(3) 
@@ -367,6 +395,7 @@ class _BillingScreenState extends State<BillingScreen> {
           .doc(docId)
           .set({
             'docId': docId,
+            'userId': userId,
             'nodeName': node,
             'startDate': Timestamp.fromDate(startDate),
             'endDate': Timestamp.fromDate(endDate),
@@ -375,6 +404,9 @@ class _BillingScreenState extends State<BillingScreen> {
             'hargaPerCBM': hargaPerCBM,
             'usage': usage,
             'totalCost': totalCost,
+            'status': 'unpaid',
+            'paidAt': null,
+            'updatedBy': null,
             'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
 
@@ -564,7 +596,7 @@ class _BillingScreenState extends State<BillingScreen> {
                                   _buildDetailRow("Meter Awal", "${meterAwal.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
                                   _buildDetailRow("Meter Akhir", "${meterAkhir.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
                                   _buildDetailRow("Pemakaian", "${_currentUsage.toStringAsFixed(3)} m\u00B3", isLoading: _isLoading),
-                                  _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency(hargaPerCBM)}"),
+                                  _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency(hargaPerCBM)}", isLoading: _isLoading),
                                   const SizedBox(height: 10),
                                   const Divider(height: 30, thickness: 1.5, color: Color(0xFF17778F)),
                                   
@@ -662,7 +694,7 @@ class _BillingScreenState extends State<BillingScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text("Riwayat Tagihan", style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
           content: SizedBox(
-            width: double.maxFinite,
+            width: MediaQuery.of(context).size.width * 0.9,
             child: ListView.builder(
               shrinkWrap: true,
               itemCount: _billingHistory.length,
@@ -670,15 +702,37 @@ class _BillingScreenState extends State<BillingScreen> {
                 final record = _billingHistory[index];
                 final recordDate = (record['startDate'] as Timestamp).toDate();
                 final monthName = DateFormat('MMMM yyyy', 'id_ID').format(recordDate);
+                final paymentStatus = (record['status'] as String? ?? 'unpaid').toLowerCase();
+                final isPaid = paymentStatus == 'paid' || paymentStatus == 'lunas';
+                final statusText = isPaid ? 'Lunas' : 'Belum Lunas';
 
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6), elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   color: const Color(0xFFE0F2F7),
                   child: ListTile(
+                    leading: Icon(
+                      isPaid ? Icons.check_circle : Icons.error_outline,
+                      color: isPaid ? Colors.green[700] : Colors.orange[700],
+                      size: 28,
+                    ),
                     title: Text(monthName, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF17778F))),
                     subtitle: Text("Pemakaian: ${(record['usage'] as num).toStringAsFixed(3)} m³", style: const TextStyle(color: Color(0xFF004D40))),
-                    trailing: Text("Rp ${_formatCurrency((record['totalCost'] as num).toDouble())}"),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text("Rp ${_formatCurrency((record['totalCost'] as num).toDouble())}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isPaid ? Colors.green[800] : Colors.red[800],
+                          ),
+                        ),
+                      ],
+                    ),
                     onTap: () {
                       Navigator.of(dialogContext).pop();
                       _showBillingDetailDialog(record);
@@ -701,8 +755,13 @@ class _BillingScreenState extends State<BillingScreen> {
 
   void _showBillingDetailDialog(Map<String, dynamic> billingRecord) {
     if (!mounted) return;
-
+    
     final recordStartDate = (billingRecord['startDate'] as Timestamp).toDate();
+    final paymentStatus = (billingRecord['status'] as String? ?? 'unpaid').toLowerCase();
+    final isPaid = paymentStatus == 'paid' || paymentStatus == 'lunas';
+    final statusText = isPaid ? 'Lunas' : 'Belum Lunas';
+    final paidAtTimestamp = billingRecord['paidAt'] as Timestamp?;
+
     showDialog(
         context: context,
         builder: (BuildContext dialogContext) {
@@ -721,6 +780,10 @@ class _BillingScreenState extends State<BillingScreen> {
                   _buildDetailRow("Pemakaian", "${(billingRecord['usage'] as num).toStringAsFixed(3)} m\u00B3"),
                   _buildDetailRow("Harga per m\u00B3", "Rp ${_formatCurrency((billingRecord['hargaPerCBM'] as num).toDouble())}"),
                   const Divider(height: 15, thickness: 1, color: Colors.grey),
+                  _buildDetailRow("Status Pembayaran", statusText, valueColor: isPaid ? Colors.green[800] : Colors.red[800]),
+                  if (isPaid && paidAtTimestamp != null)
+                    _buildDetailRow("Tanggal Bayar", DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(paidAtTimestamp.toDate())),
+                  const Divider(height: 15, thickness: 1, color: Colors.grey),
                   Align(
                     alignment: Alignment.centerRight,
                     child: Text("Total: Rp ${_formatCurrency((billingRecord['totalCost'] as num).toDouble())}",
@@ -734,82 +797,9 @@ class _BillingScreenState extends State<BillingScreen> {
                 child: const Text("Tutup", style: TextStyle(color: Color(0xFF17778F))),
                 onPressed: () => Navigator.of(dialogContext).pop(),
               ),
-              TextButton(
-                child: const Text("Hapus", style: TextStyle(color: Colors.red)),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  _confirmAndDeleteBillingRecord(billingRecord);
-                },
-              ),
             ],
           );
         });
-  }
-
-  void _confirmAndDeleteBillingRecord(Map<String, dynamic> billingRecord) {
-    if (!mounted) return;
-
-    showDialog(
-        context: context,
-        builder: (BuildContext dialogContext) {
-          return AlertDialog(
-            backgroundColor: const Color(0xF2FFFFFF),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text("Konfirmasi Hapus", style: TextStyle(color: Color(0xFF17778F), fontWeight: FontWeight.bold)),
-            content: const Text("Yakin ingin menghapus tagihan ini? Tindakan ini tidak dapat diurungkan.", style: TextStyle(color: Color(0xFF17778F))),
-            actions: <Widget>[
-              TextButton(
-                child: const Text("Batal", style: TextStyle(color: Color(0xFF17778F))),
-                onPressed: () => Navigator.of(dialogContext).pop(),
-              ),
-              TextButton(
-                child: const Text("Hapus", style: TextStyle(color: Colors.red)),
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                  _deleteBillingRecord(billingRecord);
-                },
-              ),
-            ],
-          );
-        });
-  }
-
-  Future<void> _deleteBillingRecord(Map<String, dynamic> billingRecord) async {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-
-    final user = auth_firebase.FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      _showErrorSnackBar(messenger, "Anda perlu masuk untuk menghapus data.");
-      return;
-    }
-    final String? docIdToDelete = billingRecord['docId'] as String?;
-    if (docIdToDelete == null || docIdToDelete.isEmpty) {
-      _showErrorSnackBar(messenger, "Gagal menghapus: ID dokumen tidak ditemukan.");
-      return;
-    }
-    try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('billing_records')
-          .doc(docIdToDelete)
-          .delete();
-      
-      // Hapus juga dari Realtime Database jika diperlukan
-      final recordDate = (billingRecord['endDate'] as Timestamp).toDate();
-      final rtdbKey = DateFormat('yyyy-MM').format(recordDate);
-      if (_activeNode != null) {
-        await _databaseRef.child(_lastDataPath).child(_activeNode!).child(rtdbKey).remove();
-      }
-      
-      if (!mounted) return;
-      
-      _showSuccessSnackBar(messenger, "Tagihan berhasil dihapus!");
-      await _loadInitialData();
-    } catch (e) {
-      if (mounted) _showErrorSnackBar(messenger, "Gagal menghapus tagihan: $e");
-    }
   }
 
   String _formatCurrency(double amount) {
@@ -858,7 +848,7 @@ class _BillingScreenState extends State<BillingScreen> {
     _showSnackBar(messenger, message, const Color(0xFF17778F));
   }
 
-  Widget _buildDetailRow(String label, String value, {bool isLoading = false}) {
+  Widget _buildDetailRow(String label, String value, {bool isLoading = false, Color? valueColor}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
@@ -868,7 +858,13 @@ class _BillingScreenState extends State<BillingScreen> {
           if (isLoading)
             const Text("Memuat...", style: TextStyle(fontSize: 16, color: Color(0xFF17778F), fontStyle: FontStyle.italic))
           else
-            Text(value, style: const TextStyle(fontSize: 16, color: Color(0xFF17778F))),
+            Flexible(
+              child: Text(
+                value, 
+                textAlign: TextAlign.end,
+                style: TextStyle(fontSize: 16, color: valueColor ?? const Color(0xFF17778F), fontWeight: FontWeight.w500)
+              ),
+            ),
         ],
       ),
     );

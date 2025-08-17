@@ -27,6 +27,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   double _tdsValue = 0.0;
   double _phValue = 0.0;
   String _pumpStatus = '00';
+  double _flowRate = 0.0; 
+  String _valveStatus = '00';
   bool _isConnected = false;
 
   StreamSubscription<DatabaseEvent>? _monitoringSubscription;
@@ -133,6 +135,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             _tdsValue = _parseDouble(data['tds']);
             _phValue = _parseDouble(data['ph']);
             _pumpStatus = _convertToString(data['pompa']); 
+            _flowRate = _parseDouble(data['debit_air']); 
+            _valveStatus = _convertToString(data['valve_open']); 
             _isConnected = _parseInt(data['status']) == 1;
             _lastUpdate = _formatTimestamp(data['timestamp']);
             _isLoadingData = false;
@@ -146,6 +150,8 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             _tdsValue = 0.0;
             _phValue = 0.0;
             _pumpStatus = '00'; 
+            _flowRate = 0.0;
+            _valveStatus = '00';
             _isConnected = false;
             _lastUpdate = 'Data tidak ditemukan';
             _isLoadingData = false;
@@ -262,8 +268,56 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       case '11':
         return {
           'text': 'ON',
-          'color': activeColor,
+          'color': const Color.fromARGB(255, 255, 255, 255),
           'icon': Icons.play_circle_outline,
+          'bgColor': activeColor.withAlpha(26),
+          'textColor': activeColor,
+        };
+      default:
+        return {
+          'text': 'UNKNOWN',
+          'color': Color(0xFF9E9E9E),
+          'icon': Icons.help_outline,
+          'bgColor': Color(0xFFF5F5F5),
+          'textColor': Color(0xFF424242),
+        };
+    }
+  }
+
+  // Method untuk mendapatkan detail status valve
+  Map<String, dynamic> _getValveStatusDetails(String status) {
+    const activeColor = Color(0xFF17778F);
+
+    switch (status) {
+      case '00':
+        return {
+          'text': 'MATI LISTRIK',
+          'color': Color(0xFFFF9800),
+          'icon': Icons.power_off,
+          'bgColor': Color(0xFFFFF3E0),
+          'textColor': Color(0xFFE65100),
+        };
+      case '01':
+        return {
+          'text': 'RUSAK',
+          'color': Color(0xFF90A4AE),
+          'icon': Icons.build,
+          'bgColor': Color(0xFFECEFF1),
+          'textColor': Color(0xFF455A64),
+        };
+      case '10':
+        return {
+          'text': 'TERTUTUP',
+          'color': Color(0xFFEF5350),
+          'icon': Icons.close,
+          'bgColor': Color(0xFFFFEBEE),
+          'textColor': Color(0xFFC62828),
+        };
+      case '11':
+        return {
+          'text': 'TERBUKA',
+          'color': const Color.fromARGB(255, 255, 255, 255),
+          'icon': Icons.check_circle_outline,
           'bgColor': activeColor.withAlpha(26),
           'textColor': activeColor,
         };
@@ -477,6 +531,7 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     }
 
     final pumpDetails = _getPumpStatusDetails(_pumpStatus);
+    final valveDetails = _getValveStatusDetails(_valveStatus);
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -515,11 +570,27 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
           ),
           const SizedBox(height: 16),
           _buildMonitoringCard(
+            'Debit Air',
+            '${_flowRate.toStringAsFixed(1)} L/min',
+            Icons.water_drop,
+            _getFlowRateColor(_flowRate),
+            _getFlowRateStatus(_flowRate),
+          ),
+          const SizedBox(height: 16),
+          _buildMonitoringCard(
             'Status Pompa',
             pumpDetails['text'],
             pumpDetails['icon'],
             pumpDetails['color'],
             _getPumpStatusDescription(_pumpStatus),
+          ),
+          const SizedBox(height: 16),
+          _buildMonitoringCard(
+            'Status Kran Node',
+            valveDetails['text'],
+            valveDetails['icon'],
+            valveDetails['color'],
+            _getValveStatusDescription(_valveStatus),
           ),
         ],
       ),
@@ -540,6 +611,38 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       default:
         return 'Status pompa tidak diketahui';
     }
+  }
+
+  // Method untuk mendapatkan deskripsi status valve
+  String _getValveStatusDescription(String status) {
+    switch (status) {
+      case '00':
+        return 'Kran tidak mendapat aliran listrik';
+      case '01':
+        return 'Kran mengalami kerusakan teknis';
+      case '10':
+        return 'Kran dalam keadaan tertutup';
+      case '11':
+        return 'Kran dalam keadaan terbuka';
+      default:
+        return 'Status kran tidak diketahui';
+    }
+  }
+
+  // Method untuk mendapatkan warna debit air
+  Color _getFlowRateColor(double flowRate) {
+    if (flowRate <= 0) return const Color(0xFFEF5350); 
+    if (flowRate < 5) return const Color(0xFFFF9800); 
+    return const Color(0xFF4FC3F7);
+  }
+
+  // Method untuk mendapatkan status debit air
+  String _getFlowRateStatus(double flowRate) {
+    if (flowRate <= 0) return 'Tidak ada aliran air';
+    if (flowRate < 2) return 'Aliran sangat rendah';
+    if (flowRate < 5) return 'Aliran rendah';
+    if (flowRate < 10) return 'Aliran normal';
+    return 'Aliran tinggi';
   }
 
   Widget _buildInfoBox(String text, IconData icon, Color color) {

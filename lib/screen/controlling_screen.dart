@@ -284,20 +284,13 @@ class _ControllingScreenState extends State<ControllingScreen> {
     final screenHeight = MediaQuery.of(context).size.height;
     final double topPadding = screenHeight * 0.03;
 
-    final pumpDetails = _getPumpStatusDetails(pompaStatus);
-    
-    final activeColor = const Color(0xE617778F); 
-    final activeColorForText = const Color(0xFF17778F);
-    final activeColorBackground = const Color(0xFF17778F).withAlpha(26);
-    final inactiveColor = Colors.red;
-
     return Scaffold(
       backgroundColor: const Color(0xFF62C3D0),
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(20, topPadding, 20, 40),
+              padding: EdgeInsets.fromLTRB(20, topPadding, 20, 20),
               child: Row(
                 children: [
                   const Text(
@@ -322,214 +315,235 @@ class _ControllingScreenState extends State<ControllingScreen> {
                 ],
               ),
             ),
+            
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Valve Status Box
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xF2FFFFFF),
-                        borderRadius: BorderRadius.all(Radius.circular(20)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x33000000),
-                            blurRadius: 12,
-                            spreadRadius: 3,
-                            offset: Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            "Status Kran Node",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: Color(0xFF17778F),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 25),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: valveOpen ? activeColorBackground : inactiveColor.shade100,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              _isLoading
-                                  ? 'Memuat...'
-                                  : 'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
-                              style: TextStyle(
-                                color: valveOpen ? activeColorForText : inactiveColor.shade700,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Container(
-                            width: screenWidth * 0.45,
-                            height: screenWidth * 0.45,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: valveOpen ? activeColor : inactiveColor,
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x4C000000),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _isLoading
-                                      ? const SizedBox(
-                                          width: 40,
-                                          height: 40,
-                                          child: CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 3,
-                                          ),
-                                        )
-                                      : Icon(
-                                          valveOpen ? Icons.water_drop : Icons.water_drop_outlined,
-                                          color: Colors.white,
-                                          size: 40,
-                                        ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    _isLoading
-                                        ? "Memuat..."
-                                        : (valveOpen ? "TERBUKA" : "TERTUTUP"),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildValveStatusBox(screenWidth),
+                            const SizedBox(height: 20),
+                            _buildPumpStatusBox(screenWidth),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 30),
-                    // Pump Status Box
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xF2FFFFFF),
-                        borderRadius: BorderRadius.all(Radius.circular(20)),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Color(0x33000000),
-                            blurRadius: 12,
-                            spreadRadius: 3,
-                            offset: Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            "Status Pompa Tandon",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 22,
-                              color: Color(0xFF17778F),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 25),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: pumpDetails['bgColor'],
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              _isLoading
-                                  ? 'Memuat...'
-                                  : 'Status: ${pumpDetails['text']}',
-                              style: TextStyle(
-                                color: pumpDetails['textColor'],
-                                fontWeight: FontWeight.bold,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          Container(
-                            width: screenWidth * 0.45,
-                            height: screenWidth * 0.45,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: pumpDetails['color'],
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Color(0x4C000000),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _isLoading
-                                      ? const SizedBox(
-                                          width: 40,
-                                          height: 40,
-                                          child: CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 3,
-                                          ),
-                                        )
-                                      : Icon(
-                                          pumpDetails['icon'],
-                                          color: Colors.white,
-                                          size: 40,
-                                        ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    _isLoading
-                                        ? "Memuat..."
-                                        : pumpDetails['text'],
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Widget untuk Kartu Status Kran (Valve)
+  Widget _buildValveStatusBox(double screenWidth) {
+    final activeColor = const Color(0xE617778F);
+    final activeColorForText = const Color(0xFF17778F);
+    final activeColorBackground = const Color(0xFF17778F).withAlpha(26);
+    final inactiveColor = Colors.red;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16), 
+      decoration: const BoxDecoration(
+        color: Color(0xF2FFFFFF),
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            "Status Kran Node",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              color: Color(0xFF17778F),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: valveOpen ? activeColorBackground : inactiveColor.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _isLoading
+                  ? 'Memuat...'
+                  : 'Status: ${valveOpen ? "TERBUKA" : "TERTUTUP"}',
+              style: TextStyle(
+                color: valveOpen ? activeColorForText : inactiveColor.shade700,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          const SizedBox(height: 15),
+          Container(
+            width: screenWidth * 0.35,
+            height: screenWidth * 0.35,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: valveOpen ? activeColor : inactiveColor,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x4C000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Center(
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          valveOpen ? Icons.water_drop : Icons.water_drop_outlined,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          valveOpen ? "TERBUKA" : "TERTUTUP",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Widget untuk Kartu Status Pompa
+  Widget _buildPumpStatusBox(double screenWidth) {
+    final pumpDetails = _getPumpStatusDetails(pompaStatus);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Color(0xF2FFFFFF),
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 12,
+            spreadRadius: 3,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            "Status Pompa Tandon",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 22,
+              color: Color(0xFF17778F),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: pumpDetails['bgColor'],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _isLoading
+                  ? 'Memuat...'
+                  : 'Status: ${pumpDetails['text']}',
+              style: TextStyle(
+                color: pumpDetails['textColor'],
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          const SizedBox(height: 15),
+          Container(
+            width: screenWidth * 0.35,
+            height: screenWidth * 0.35,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: pumpDetails['color'],
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x4C000000),
+                  blurRadius: 10,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Center(
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          pumpDetails['icon'],
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          pumpDetails['text'],
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

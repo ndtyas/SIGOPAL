@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:provider/provider.dart';
 import 'package:sigopal/provider/auth_provider.dart';
+import 'package:sigopal/notification_service.dart';
 
 class MonitoringScreen extends StatefulWidget {
   const MonitoringScreen({super.key});
@@ -26,6 +27,11 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
 
   String? _activeNode;
 
+  // State untuk melacak status notifikasi
+  bool _isHighTdsNotificationSent = false;
+  bool _isBadPhNotificationSent = false;
+
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +47,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     if (newNode != _activeNode) {
       _activeNode = newNode;
       if (_activeNode != null) {
+        _resetNotificationFlags();
         _fetchWaterQualityData();
       } else {
         setState(() {
@@ -93,6 +100,20 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     return numValue.toStringAsFixed(decimalPlaces);
   }
 
+  // Fungsi untuk menentukan apakah TDS melebihi standar SNI
+  bool _isTdsOutOfRange() {
+    if (_tdsValue == 'N/A') return false;
+    final currentTds = _convertToDouble(_tdsValue);
+    return currentTds >= 1000; // Berdasarkan logika notifikasi yang ada
+  }
+
+  // Fungsi untuk menentukan apakah pH melebihi standar SNI
+  bool _isPhOutOfRange() {
+    if (_phValue == 'N/A') return false;
+    final currentPh = _convertToDouble(_phValue);
+    return currentPh != 0 && (currentPh < 6 || currentPh > 9); // Berdasarkan logika notifikasi yang ada
+  }
+
   Future<void> _fetchWaterQualityData() async {
     if (_activeNode == null) {
       setState(() {
@@ -129,6 +150,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                   _debitAirValue = _formatValue(data['debit_air'], 3);
                   _isLoading = false;
                 });
+                _checkAndSendNotifications();
                 developer.log('Data updated - TDS: $_tdsValue, pH: $_phValue, Debit Air: $_debitAirValue', name: 'MonitoringScreen');
               } else {
                 _setDefaultValues();
@@ -161,6 +183,40 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
       }
     }
   }
+  
+  void _checkAndSendNotifications() {
+    if (_tdsValue == 'N/A' || _phValue == 'N/A') return;
+
+    final currentTds = _convertToDouble(_tdsValue);
+    final currentPh = _convertToDouble(_phValue);
+
+    if (currentTds >= 1000 && !_isHighTdsNotificationSent) {
+      NotificationService.showNotification(
+        title: '⚠️ Peringatan Kualitas Air',
+        body: 'Kadar TDS tinggi: ${currentTds.toStringAsFixed(0)} ppm. Ambang batas adalah 1000 ppm.',
+      );
+      _isHighTdsNotificationSent = true;
+    } else if (currentTds <= 950 && _isHighTdsNotificationSent) {
+      _isHighTdsNotificationSent = false;
+    }
+
+    if (currentPh != 0 && (currentPh < 6 || currentPh > 9) && !_isBadPhNotificationSent) {
+       String phStatus = currentPh < 6 ? 'terlalu asam' : 'terlalu basa';
+       NotificationService.showNotification(
+        title: '🧪 Peringatan Kualitas Air',
+        body: 'Kadar pH tidak normal: ${currentPh.toStringAsFixed(1)} ($phStatus). Rentang aman: 6 - 9',
+      );
+      // Mengunci notifikasi agar tidak dikirim berulang kali
+      _isBadPhNotificationSent = true;
+    } else if ((currentPh >= 6.8 && currentPh <= 8.2) && _isBadPhNotificationSent) {
+       _isBadPhNotificationSent = false;
+    }
+  }
+
+  void _resetNotificationFlags() {
+    _isHighTdsNotificationSent = false;
+    _isBadPhNotificationSent = false;
+  }
 
   void _setDefaultValues() {
     setState(() {
@@ -168,6 +224,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
       _phValue = 'N/A';
       _debitAirValue = '...';
       _isLoading = false;
+      _resetNotificationFlags();
     });
   }
 
@@ -193,14 +250,9 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   void _logout(BuildContext context) async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      // 1. Batalkan listener data terlebih dahulu
       await _dataSubscription?.cancel();
       developer.log('Data subscription cancelled before logout.', name: 'MonitoringScreen');
-
-      // 2. Baru lakukan proses logout
       await auth.signOut();
-
-      // 3. Pindah halaman setelah semua beres
       if (context.mounted) {
         Navigator.pushReplacementNamed(context, '/checkauth');
       }
@@ -212,17 +264,18 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
   }
 
   void _refreshData() {
+    _resetNotificationFlags();
     setState(() {
       _isLoading = true;
     });
     _fetchWaterQualityData();
   }
-
-  Widget _dataBox(String imagePath, String value, String title) {
+  
+  Widget _dataBox(String imagePath, String value, String title, {bool isOutOfRange = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xE617778F),
+        color: isOutOfRange ? const Color(0xE6D32F2F) : const Color(0xE617778F), // Merah jika out of range
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -496,8 +549,8 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
                       mainAxisSpacing: 16,
                       childAspectRatio: 1.0,
                       children: [
-                        _dataBox("images/tds.png", _tdsValue, "Kadar TDS"),
-                        _dataBox("images/ph.png", _phValue, "Kadar pH"),
+                        _dataBox("images/tds.png", _tdsValue, "Kadar TDS", isOutOfRange: _isTdsOutOfRange()),
+                        _dataBox("images/ph.png", _phValue, "Kadar pH", isOutOfRange: _isPhOutOfRange()),
                       ],
                     ),
                     const SizedBox(height: 15),

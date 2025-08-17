@@ -60,17 +60,16 @@ class AuthProvider extends ChangeNotifier {
         _currentNodeId = null;
         _isAdmin = false;
         _isUserInitialized = false;
-        _isNodeDisconnected = false; // Reset status koneksi
+        _isNodeDisconnected = false;
         _stopNodeStatusListener();
         notifyListeners();
       }
     });
   }
 
-  // PERUBAHAN: Logika notifikasi koneksi pulih digabungkan di sini
   void startNodeStatusListener(String nodeName) {
     _stopNodeStatusListener();
-    _isNodeDisconnected = false; // Reset state setiap memulai listener baru
+    _isNodeDisconnected = false;
 
     final dbRef = _fireRealtimeDb.ref('last_data/$nodeName/status');
     _statusSubscription = dbRef.onValue.listen((event) {
@@ -78,7 +77,7 @@ class AuthProvider extends ChangeNotifier {
       
       // Jika status 0 (terputus) dan sebelumnya tidak terputus
       if ((status == 0 || status == '0') && !_isNodeDisconnected) {
-        _isNodeDisconnected = true; // Tandai sebagai terputus
+        _isNodeDisconnected = true;
         
         NotificationService.showNotification(
           title: '⚠️ Peringatan Node',
@@ -88,16 +87,13 @@ class AuthProvider extends ChangeNotifier {
         _inAppNotificationMessage = 'Koneksi node "$nodeName" terputus!';
         notifyListeners();
       } 
-      // Jika status 1 (terhubung) dan sebelumnya terputus
       else if ((status == 1 || status == '1') && _isNodeDisconnected) {
-        _isNodeDisconnected = false; // Tandai sebagai terhubung kembali
+        _isNodeDisconnected = false;
 
         NotificationService.showNotification(
           title: '✅ Koneksi Pulih',
           body: 'Koneksi node "$nodeName" berhasil tersambung kembali.',
         );
-
-        // Hapus pesan notifikasi di dalam aplikasi jika koneksi sudah pulih
         clearInAppNotification(); 
       }
     });
@@ -110,7 +106,7 @@ class AuthProvider extends ChangeNotifier {
 
   void clearInAppNotification() {
     _inAppNotificationMessage = null;
-    notifyListeners(); // Tambahkan ini agar UI diperbarui
+    notifyListeners();
   }
 
   Future<void> _initPrefs() async {
@@ -363,7 +359,7 @@ class AuthProvider extends ChangeNotifier {
         }
       } catch (e) {
         developer.log('Error initializing user node: $e', name: 'AuthProvider');
-        _isAdmin = false; // Default ke false jika ada error
+        _isAdmin = false;
       } finally {
         _isUserInitialized = true;
       }
@@ -428,7 +424,7 @@ class AuthProvider extends ChangeNotifier {
       _currentNodeId = null;
       _isAdmin = false;
       _isUserInitialized = false;
-      _isNodeDisconnected = false; // Reset status koneksi
+      _isNodeDisconnected = false;
       enteredEmail = '';
       enteredPassword = '';
       _stopNodeStatusListener();
