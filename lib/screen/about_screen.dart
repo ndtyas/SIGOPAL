@@ -12,7 +12,6 @@ class AboutPage extends StatelessWidget {
           SafeArea(
             child: Column(
               children: [
-                // Header bar dengan tombol kembali dan logo
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   child: Row(
@@ -41,7 +40,6 @@ class AboutPage extends StatelessWidget {
                   ),
                 ),
 
-                // Konten utama
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16),
@@ -165,7 +163,6 @@ class AboutPage extends StatelessWidget {
   }
 }
 
-/// Widget bantuan untuk menampilkan judul dan deskripsi fitur
 class _FeatureText extends StatelessWidget {
   final String title;
   final String description;

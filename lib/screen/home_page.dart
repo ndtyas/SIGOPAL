@@ -30,8 +30,6 @@ class _HomePageState extends State<HomePage> {
   void _setupNotificationListener() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
-      // Listen untuk perubahan notification message
       authProvider.addListener(_handleNotificationChange);
     });
   }
@@ -42,13 +40,11 @@ class _HomePageState extends State<HomePage> {
 
     if (message != null && mounted) {
       _showInAppNotification(message);
-      // Clear notification setelah ditampilkan
       authProvider.clearInAppNotification();
     }
   }
 
   void _showInAppNotification(String message) {
-    // Pastikan tidak ada SnackBar lain yang aktif
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     
     final snackBar = SnackBar(
@@ -95,7 +91,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    // Remove listener saat widget di-dispose
     if (mounted) {
       Provider.of<AuthProvider>(context, listen: false)
           .removeListener(_handleNotificationChange);
@@ -121,7 +116,7 @@ class _HomePageState extends State<HomePage> {
         selectedItemColor: Colors.white,
         unselectedItemColor: Colors.white70,
         backgroundColor: const Color.fromARGB(255, 11, 58, 70),
-        type: BottomNavigationBarType.fixed, // Untuk memastikan semua tab terlihat
+        type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.monitor), 

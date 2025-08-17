@@ -11,7 +11,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  // Controllers for text input fields
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final usernameController = TextEditingController();
@@ -30,7 +29,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    // Dispose all TextEditingControllers to prevent memory leaks
     emailController.dispose();
     passwordController.dispose();
     usernameController.dispose();
@@ -39,7 +37,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch AuthProvider for state changes (e.g., islogin, showTopError, rememberMe)
     final auth = Provider.of<AuthProvider>(context);
 
     return Scaffold(
@@ -53,20 +50,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Back button
                     Align(
                       alignment: Alignment.topLeft,
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back, color: Colors.white),
                         onPressed: () {
-                          // Navigate back to the welcome screen
                           Navigator.pushReplacementNamed(context, '/welcome');
                         },
                       ),
                     ),
                     const SizedBox(height: 10),
 
-                    // Logo display, only shown in login mode
                     if (auth.islogin)
                       Column(
                         children: [
@@ -79,7 +73,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                       ),
 
-                    // Top error message display
                     if (auth.showTopError)
                       Container(
                         width: MediaQuery.of(context).size.width * 0.7,
@@ -96,7 +89,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
 
-                    // Login/Register Form Container
                     Container(
                       padding: const EdgeInsets.all(35),
                       width: MediaQuery.of(context).size.width * 0.8,
@@ -116,7 +108,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         key: auth.form,
                         child: Column(
                           children: [
-                            // Username field, only shown in register mode
                             if (!auth.islogin)
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,8 +136,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                     decoration: InputDecoration(
                                       hintText: "Masukkan Nama....",
-                                      // Ganti TextStyle().withOpacity(0.6) dengan Color ARGB
-                                      hintStyle: const TextStyle(color: Color(0x9917778F)), // 0x99 = 60% dari 0xE6
+                                      hintStyle: const TextStyle(color: Color(0x9917778F)),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(15),
                                         borderSide: const BorderSide(color: Color(0xE617778F)),
@@ -162,7 +152,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ],
                               ),
 
-                            // Email field (present in both login and register)
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -194,7 +183,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                   style: const TextStyle(color: Color(0xE617778F), fontSize: 14),
                                   decoration: InputDecoration(
                                     hintText: "Masukkan Email...",
-                                    // Ganti TextStyle().withOpacity(0.6) dengan Color ARGB
                                     hintStyle: const TextStyle(color: Color(0x9917778F)),
                                     enabledBorder: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(15),
@@ -211,7 +199,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               ],
                             ),
 
-                            // Custom TextfieldPasswordWidget for the password field
                             TextfieldPasswordWidget(
                               controller: passwordController,
                               textColor: const Color(0xE617778F),
@@ -219,7 +206,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 10),
 
-                            // "Remember Me" Checkbox, only shown for login mode
                             if (auth.islogin)
                               Align(
                                 alignment: Alignment.centerLeft,
@@ -241,27 +227,21 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             const SizedBox(height: 20),
 
-                            // Login/Register Button
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () {
                                   FocusScope.of(context).unfocus();
 
-                                  // Update AuthProvider's variables with current controller values
                                   auth.enteredEmail = emailController.text.trim();
                                   auth.enteredPassword = passwordController.text.trim();
                                   if (!auth.islogin) {
                                     auth.enteredUsername = usernameController.text.trim();
                                   }
 
-                                  // Call submit (login) or register method based on current mode
                                   if (auth.islogin) {
                                     auth.submit(
                                       onSuccess: () {
-                                        // PERUBAHAN: Tidak perlu navigasi di sini.
-                                        // AuthWrapper akan menangani navigasi secara otomatis
-                                        // setelah status auth berubah.
                                       },
                                       onError: (msg) {
                                         if (!context.mounted) return;
@@ -310,7 +290,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 5),
 
-                            // Toggle between Login and Register modes
                             TextButton(
                               onPressed: () {
                                 setState(() {
@@ -331,11 +310,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             const SizedBox(height: 10),
 
-                            // Resend Email Verification button, only shown in login mode
                             if (auth.islogin)
                               TextButton(
                                 onPressed: () async {
-                                  // Ensure controller values are passed to provider before resending
                                   auth.enteredEmail = emailController.text.trim();
                                   auth.enteredPassword = passwordController.text.trim();
 

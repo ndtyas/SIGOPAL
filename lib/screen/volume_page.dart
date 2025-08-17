@@ -26,7 +26,6 @@ class _VolumePageState extends State<VolumePage> {
   StreamSubscription<DatabaseEvent>? _dataSubscription;
 
   String? _activeNode;
-  // State untuk melacak apakah notifikasi level rendah sudah dikirim
   bool _isLowNotificationSent = false;
 
   @override

@@ -101,7 +101,6 @@ class BillingScreen extends StatefulWidget {
 class _BillingScreenState extends State<BillingScreen> {
   static const String _lastDataPath = 'last_data';
 
-  // State untuk UI
   DateTime? startDate;
   DateTime? endDate;
   double meterAwal = 0.0;
@@ -117,7 +116,6 @@ class _BillingScreenState extends State<BillingScreen> {
   bool _isSavingPreviousMonthBill = false;
   bool _isSavingCurrentBill = false;
 
-  // State untuk data
   List<Map<String, dynamic>> _billingHistory = [];
   late DatabaseReference _databaseRef;
   String? _activeNode;
@@ -138,7 +136,6 @@ class _BillingScreenState extends State<BillingScreen> {
     }
   }
   
-  // Fungsi baru untuk mengambil harga global dari Firestore
   Future<void> _fetchGlobalWaterPrice() async {
     try {
       final docSnapshot = await FirebaseFirestore.instance
@@ -181,7 +178,6 @@ class _BillingScreenState extends State<BillingScreen> {
     }
 
     try {
-      // Ambil data harga global terlebih dahulu
       await _fetchGlobalWaterPrice();
 
       final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
@@ -272,7 +268,6 @@ class _BillingScreenState extends State<BillingScreen> {
     final endOfPreviousMonth = DateTime(now.year, now.month, 0, 23, 59, 59);
 
     try {
-      // Ambil data bulan lalu dari Realtime Database
       final previousMonthKey = DateFormat('yyyy-MM').format(previousMonth);
       final previousMonthSnapshot = await _databaseRef.child(_lastDataPath).child(node).child(previousMonthKey).get();
 
@@ -283,8 +278,6 @@ class _BillingScreenState extends State<BillingScreen> {
         return;
       }
       final meterAkhirBulanLalu = _convertToDouble(previousMonthSnapshot.value);
-
-      // Ambil data 2 bulan yang lalu untuk meter awal
       final twoMonthsAgo = DateTime(previousMonth.year, previousMonth.month - 1, 1);
       final twoMonthsAgoKey = DateFormat('yyyy-MM').format(twoMonthsAgo);
       final twoMonthsAgoSnapshot = await _databaseRef.child(_lastDataPath).child(node).child(twoMonthsAgoKey).get();
@@ -295,7 +288,6 @@ class _BillingScreenState extends State<BillingScreen> {
       final usageBulanLalu = meterAkhirBulanLalu - meterAwalBulanLalu;
       final costBulanLalu = (usageBulanLalu > 0 ? usageBulanLalu : 0) * hargaPerCBM;
 
-      // Simpan ke Firestore
       await _saveBillingData(
         userId: user.uid,
         node: node,
@@ -343,7 +335,6 @@ class _BillingScreenState extends State<BillingScreen> {
     final endOfCurrentMonth = now;
 
     try {
-      // Simpan ke Firestore
       await _saveBillingData(
         userId: user.uid,
         node: node,
@@ -385,7 +376,6 @@ class _BillingScreenState extends State<BillingScreen> {
     required double totalCost,
   }) async {
     try {
-      // Generate document ID dengan format: node_YYYY-MM
       final docId = '${node}_${DateFormat('yyyy-MM').format(startDate)}';
       
       await FirebaseFirestore.instance
@@ -426,13 +416,11 @@ class _BillingScreenState extends State<BillingScreen> {
       startDate = DateTime(now.year, now.month, 1);
       endDate = now;
 
-      // Ambil data debit air saat ini
       final String currentDebitPath = 'last_data/$node/debit_air';
       final DataSnapshot lastDebitSnapshot = await _databaseRef.child(currentDebitPath).get();
       if (!mounted) return;
       double currentDebit = _convertToDouble(lastDebitSnapshot.value);
 
-      // Ambil data bulan lalu untuk meter awal
       final previousMonth = DateTime(now.year, now.month - 1, 1);
       final previousMonthKey = DateFormat('yyyy-MM').format(previousMonth);
       final String previousMonthPath = '$_lastDataPath/$node/$previousMonthKey'; 
@@ -475,7 +463,6 @@ class _BillingScreenState extends State<BillingScreen> {
           .get();
 
       if (mounted) {
-        // Filter hanya 12 bulan terakhir
         final twelveMonthsAgo = DateTime.now().subtract(const Duration(days: 365));
         setState(() {
           _billingHistory = querySnapshot.docs

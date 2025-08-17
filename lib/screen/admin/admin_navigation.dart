@@ -214,13 +214,11 @@ class _AdminNavigationState extends State<AdminNavigation> {
           ),
           ElevatedButton(
             onPressed: () async {
-              // Simpan context untuk digunakan nanti
               final navigator = Navigator.of(context);
               final scaffoldMessenger = ScaffoldMessenger.of(context);
               
               navigator.pop();
               
-              // Show loading dengan context yang masih valid
               final loadingContext = context;
               showDialog(
                 context: loadingContext,
@@ -233,7 +231,6 @@ class _AdminNavigationState extends State<AdminNavigation> {
               try {
                 await auth.signOut();
                 if (mounted) {
-                  // Tutup loading dialog
                   navigator.pop();
                   navigator.pushReplacementNamed('/welcome');
                 }

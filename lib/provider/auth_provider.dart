@@ -33,7 +33,7 @@ class AuthProvider extends ChangeNotifier {
   String? _currentNodeId;
   StreamSubscription<DatabaseEvent>? _statusSubscription;
   String? _inAppNotificationMessage;
-  // PERUBAHAN: State untuk melacak status koneksi node
+  // State untuk melacak status koneksi node
   bool _isNodeDisconnected = false; 
   
   // State untuk role dan inisialisasi user
@@ -256,7 +256,7 @@ class AuthProvider extends ChangeNotifier {
         'email': enteredEmail,
         'createdAt': Timestamp.now(),
         'uid': userCredential.user!.uid,
-        'role': 'user', // Default role untuk user baru
+        'role': 'user',
       });
 
       await userCredential.user!.sendEmailVerification();

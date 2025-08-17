@@ -230,14 +230,9 @@ class _ControllingScreenState extends State<ControllingScreen> {
   void _logout(BuildContext context) async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      // 1. Batalkan listener data terlebih dahulu
       await _dataSubscription?.cancel();
       developer.log('Data subscription cancelled before logout.', name: 'ControllingScreen');
-      
-      // 2. Baru lakukan proses logout
       await auth.signOut();
-      
-      // 3. Pindah halaman setelah semua beres
       if (context.mounted) {
         Navigator.pushReplacementNamed(context, '/checkauth');
       }
@@ -345,7 +340,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
     );
   }
 
-  // Widget untuk Kartu Status Kran (Valve)
   Widget _buildValveStatusBox(double screenWidth) {
     final activeColor = const Color(0xE617778F);
     final activeColorForText = const Color(0xFF17778F);
@@ -448,7 +442,6 @@ class _ControllingScreenState extends State<ControllingScreen> {
     );
   }
 
-  // Widget untuk Kartu Status Pompa
   Widget _buildPumpStatusBox(double screenWidth) {
     final pumpDetails = _getPumpStatusDetails(pompaStatus);
 

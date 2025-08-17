@@ -23,7 +23,6 @@ class _NodeScreenState extends State<NodeScreen> {
 
       final currentNode = auth.getCurrentNode();
       if (currentNode != null && currentNode.isNotEmpty) {
-        // Jika user sudah memiliki node, langsung arahkan ke home page.
         Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
       }
     });

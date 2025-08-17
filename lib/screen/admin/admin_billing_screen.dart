@@ -16,24 +16,18 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
   final Map<String, String> _userCache = {};
   bool _isUpdatingPrice = false;
 
-  // SOLUSI: Modifikasi logic query untuk menghindari masalah single-field index
   Stream<QuerySnapshot> _getBillingRecordsStream() {
     Query query = FirebaseFirestore.instance.collectionGroup('billing_records');
 
     if (_selectedFilter != 'all') {
-      // Untuk query dengan filter, gunakan index composite yang sudah dibuat
       query = query.where('status', isEqualTo: _selectedFilter)
                    .orderBy('createdAt', descending: true);
     } else {
-      // SOLUSI: Untuk query tanpa filter, jangan gunakan orderBy
-      // Kita akan sort di client-side
-      // query = query.orderBy('createdAt', descending: true); // HAPUS INI
     }
 
     return query.snapshots();
   }
 
-  // Filter records untuk menghilangkan yang totalCost = 0
   List<QueryDocumentSnapshot> _filterNonZeroRecords(
       List<QueryDocumentSnapshot> records) {
     return records.where((record) {
@@ -80,7 +74,6 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
                   children: [
                     _buildSummaryCard(),
                     _buildFilterChips(),
-                    // Modifikasi StreamBuilder untuk handle sorting
                     StreamBuilder<QuerySnapshot>(
                       stream: _getBillingRecordsStream(),
                       builder: (context, snapshot) {
@@ -95,7 +88,6 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
                         final billingRecords = snapshot.data?.docs ?? [];
                         final filteredRecords = _filterNonZeroRecords(billingRecords);
 
-                        // SOLUSI: Sort di client-side hanya untuk query tanpa filter
                         if (_selectedFilter == 'all') {
                           filteredRecords.sort((a, b) {
                             final aData = a.data() as Map<String, dynamic>;
@@ -104,20 +96,17 @@ class _AdminBillingScreenState extends State<AdminBillingScreen> {
                             final aCreatedAt = aData['createdAt'];
                             final bCreatedAt = bData['createdAt'];
                             
-                            // Handle null values
                             if (aCreatedAt == null && bCreatedAt == null) return 0;
                             if (aCreatedAt == null) return 1;
                             if (bCreatedAt == null) return -1;
                             
-                            // Compare Timestamps
                             if (aCreatedAt is Timestamp && bCreatedAt is Timestamp) {
-                              return bCreatedAt.compareTo(aCreatedAt); // Descending order
+                              return bCreatedAt.compareTo(aCreatedAt);
                             }
                             
                             return 0;
                           });
                         }
-                        // Untuk query dengan filter, sudah di-sort oleh Firestore
 
                         if (filteredRecords.isEmpty) {
                           return _buildEmptyWidget();

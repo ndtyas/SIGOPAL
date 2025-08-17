@@ -27,7 +27,6 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
 
   String? _activeNode;
 
-  // State untuk melacak status notifikasi
   bool _isHighTdsNotificationSent = false;
   bool _isBadPhNotificationSent = false;
 
@@ -100,18 +99,16 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     return numValue.toStringAsFixed(decimalPlaces);
   }
 
-  // Fungsi untuk menentukan apakah TDS melebihi standar SNI
   bool _isTdsOutOfRange() {
     if (_tdsValue == 'N/A') return false;
     final currentTds = _convertToDouble(_tdsValue);
-    return currentTds >= 1000; // Berdasarkan logika notifikasi yang ada
+    return currentTds >= 1000; 
   }
 
-  // Fungsi untuk menentukan apakah pH melebihi standar SNI
   bool _isPhOutOfRange() {
     if (_phValue == 'N/A') return false;
     final currentPh = _convertToDouble(_phValue);
-    return currentPh != 0 && (currentPh < 6 || currentPh > 9); // Berdasarkan logika notifikasi yang ada
+    return currentPh != 0 && (currentPh < 6 || currentPh > 9);
   }
 
   Future<void> _fetchWaterQualityData() async {
@@ -206,7 +203,6 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
         title: '🧪 Peringatan Kualitas Air',
         body: 'Kadar pH tidak normal: ${currentPh.toStringAsFixed(1)} ($phStatus). Rentang aman: 6 - 9',
       );
-      // Mengunci notifikasi agar tidak dikirim berulang kali
       _isBadPhNotificationSent = true;
     } else if ((currentPh >= 6.8 && currentPh <= 8.2) && _isBadPhNotificationSent) {
        _isBadPhNotificationSent = false;
@@ -275,7 +271,7 @@ class _MonitoringScreenState extends State<MonitoringScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: isOutOfRange ? const Color(0xE6D32F2F) : const Color(0xE617778F), // Merah jika out of range
+        color: isOutOfRange ? const Color(0xE6D32F2F) : const Color(0xE617778F),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(

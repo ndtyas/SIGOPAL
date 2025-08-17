@@ -22,7 +22,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   List<String> _availableNodes = [];
   bool _isLoadingNodes = true;
 
-  // Monitoring data
   double _waterLevel = 0.0;
   double _tdsValue = 0.0;
   double _phValue = 0.0;
@@ -35,7 +34,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   bool _isLoadingData = false;
   String? _lastUpdate;
 
-  // Notification states
   bool _isLowWaterNotificationSent = false;
   bool _isHighTdsNotificationSent = false;
   bool _isBadPhNotificationSent = false;
@@ -82,7 +80,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
         }
       }
       
-      // Sort nodes alphabetically for consistency
       validNodes.sort();
 
       if (!mounted) return;
@@ -113,8 +110,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
 
   void _startMonitoring(String nodeId) {
     _monitoringSubscription?.cancel();
-
-    // Reset notification states when switching nodes
     _isLowWaterNotificationSent = false;
     _isHighTdsNotificationSent = false;
     _isBadPhNotificationSent = false;
@@ -141,8 +136,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
             _lastUpdate = _formatTimestamp(data['timestamp']);
             _isLoadingData = false;
           });
-
-          // Check for notification triggers
           _checkNotifications();
         } else {
           setState(() {
@@ -228,7 +221,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     return 0;
   }
 
-  // Added method to convert pump status to string (matching ControllingScreen)
   String _convertToString(dynamic value) {
     if (value == null) {
       return '00';
@@ -236,7 +228,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     return value.toString();
   }
 
-  // Added method to get pump status details (matching ControllingScreen)
   Map<String, dynamic> _getPumpStatusDetails(String status) {
     const activeColor = Color(0xFF17778F);
 
@@ -284,7 +275,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     }
   }
 
-  // Method untuk mendapatkan detail status valve
   Map<String, dynamic> _getValveStatusDetails(String status) {
     const activeColor = Color(0xFF17778F);
 
@@ -348,16 +338,9 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
   void _logout() async {
     final auth = Provider.of<AuthProvider>(context, listen: false);
     try {
-      // 1. Cancel data subscription first
       await _monitoringSubscription?.cancel();
-
-      // 2. Perform logout
       await auth.signOut();
-
-      // 3. Check if the widget is still mounted AFTER the async gap
       if (!mounted) return; 
-      
-      // 4. Navigate using the State's context
       Navigator.pushReplacementNamed(context, '/checkauth');
 
     } catch (e) {
@@ -381,7 +364,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Custom Header - simplified without back button
             Padding(
               padding: EdgeInsets.fromLTRB(20, topPadding, 20, 20),
               child: Row(
@@ -597,7 +579,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     );
   }
 
-  // Added method to get pump status description
   String _getPumpStatusDescription(String status) {
     switch (status) {
       case '00':
@@ -613,7 +594,6 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     }
   }
 
-  // Method untuk mendapatkan deskripsi status valve
   String _getValveStatusDescription(String status) {
     switch (status) {
       case '00':
@@ -629,14 +609,12 @@ class _AdminMonitoringScreenState extends State<AdminMonitoringScreen> {
     }
   }
 
-  // Method untuk mendapatkan warna debit air
   Color _getFlowRateColor(double flowRate) {
     if (flowRate <= 0) return const Color(0xFFEF5350); 
     if (flowRate < 5) return const Color(0xFFFF9800); 
     return const Color(0xFF4FC3F7);
   }
 
-  // Method untuk mendapatkan status debit air
   String _getFlowRateStatus(double flowRate) {
     if (flowRate <= 0) return 'Tidak ada aliran air';
     if (flowRate < 2) return 'Aliran sangat rendah';
